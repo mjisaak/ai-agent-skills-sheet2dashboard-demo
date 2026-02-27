@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sales Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0f172a;
+    --surface: #1e293b;
+    --surface2: #263044;
+    --border: #334155;
+    --text: #e2e8f0;
+    --text-muted: #94a3b8;
+    --accent: #3b82f6;
+    --accent2: #60a5fa;
+    --success: #10b981;
+    --warn: #f59e0b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; font-size: 14px; }
+  a { color: var(--accent2); }
+  .app { display: flex; flex-direction: column; min-height: 100vh; }
+
+  /* Header */
+  .header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 16px 24px; display: flex; align-items: center; gap: 16px; }
+  .header h1 { font-size: 20px; font-weight: 700; color: var(--text); }
+  .header .subtitle { color: var(--text-muted); font-size: 13px; }
+
+  /* Layout */
+  .main { display: flex; flex: 1; }
+  .sidebar { width: 280px; min-width: 280px; background: var(--surface); border-right: 1px solid var(--border); padding: 20px 16px; display: flex; flex-direction: column; gap: 20px; overflow-y: auto; }
+  .content { flex: 1; padding: 24px; overflow-y: auto; display: flex; flex-direction: column; gap: 24px; }
+
+  /* Filter sidebar */
+  .filter-section h3 { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); margin-bottom: 10px; }
+  .filter-section select, .filter-section input[type=range] { width: 100%; }
+  select { background: var(--surface2); border: 1px solid var(--border); color: var(--text); padding: 6px 8px; border-radius: 6px; font-size: 13px; cursor: pointer; }
+  select:focus { outline: none; border-color: var(--accent); }
+  select[multiple] { height: 110px; }
+
+  .range-row { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+  input[type=range] { accent-color: var(--accent); cursor: pointer; }
+
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 7px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface2); color: var(--text); font-size: 12px; cursor: pointer; transition: background .15s; }
+  .btn:hover { background: var(--border); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary:hover { background: var(--accent2); }
+  .btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+  .filter-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  /* KPI row */
+  .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 16px; }
+  .kpi-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; }
+  .kpi-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); margin-bottom: 8px; }
+  .kpi-value { font-size: 26px; font-weight: 700; color: var(--text); line-height: 1; }
+  .kpi-sub { font-size: 12px; color: var(--text-muted); margin-top: 6px; }
+
+  /* Charts grid */
+  .charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 20px; }
+  .chart-card.wide { grid-column: 1 / -1; }
+  .chart-title { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 16px; }
+  .chart-wrap { position: relative; height: 240px; }
+  .chart-wrap canvas { max-height: 240px !important; }
+
+  /* No data */
+  .no-data { display: flex; align-items: center; justify-content: center; height: 160px; color: var(--text-muted); font-size: 14px; }
+
+  /* Summary bar */
+  .summary-bar { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 20px; font-size: 13px; color: var(--text-muted); }
+  .summary-bar strong { color: var(--text); }
+
+  /* Active dept chip */
+  .dept-filter-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+  .dept-chip { padding: 4px 10px; border-radius: 99px; font-size: 11px; font-weight: 600; cursor: pointer; border: 2px solid transparent; opacity: .6; transition: opacity .15s, border-color .15s; }
+  .dept-chip.active { opacity: 1; border-color: rgba(255,255,255,.35); }
+
+  /* Responsive */
+  @media (max-width: 900px) {
+    .sidebar { width: 220px; min-width: 220px; }
+    .charts-grid { grid-template-columns: 1fr; }
+    .chart-card.wide { grid-column: 1; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="header">
+    <div>
+      <h1>&#x1F4CA; Sales Dashboard</h1>
+      <div class="subtitle">Interaktiver Report &mdash; Umsatz &amp; Personaldaten</div>
+    </div>
+  </div>
+  <div class="main">
+    <!-- Sidebar filters -->
+    <aside class="sidebar">
+      <div class="filter-section">
+        <h3>Zeitraum</h3>
+        <label style="font-size:12px;color:var(--text-muted)">Von</label>
+        <select id="f-start"></select>
+        <label style="font-size:12px;color:var(--text-muted);margin-top:8px;display:block">Bis</label>
+        <select id="f-end"></select>
+        <div style="margin-top:10px">
+          <button class="btn" id="btn-last12">Letzte 12 Monate</button>
+        </div>
+      </div>
+
+      <div class="filter-section">
+        <h3>Abteilung</h3>
+        <select id="f-abteilung" multiple title="Mehrfachauswahl: Strg+Klick"></select>
+        <div style="margin-top:6px;font-size:11px;color:var(--text-muted)">Strg+Klick f&uuml;r Mehrfachauswahl</div>
+      </div>
+
+      <div class="filter-section">
+        <h3>Bundesland</h3>
+        <select id="f-bundesland" multiple></select>
+      </div>
+
+      <div class="filter-section">
+        <h3>Stadt</h3>
+        <select id="f-stadt" multiple></select>
+      </div>
+
+      <div class="filter-section">
+        <h3>Beruf</h3>
+        <select id="f-beruf" multiple></select>
+      </div>
+
+      <div class="filter-section">
+        <h3>Besch&auml;ftigung</h3>
+        <select id="f-teilzeit">
+          <option value="all">Alle</option>
+          <option value="Nein">Vollzeit</option>
+          <option value="Ja">Teilzeit</option>
+        </select>
+      </div>
+
+      <div class="filter-section">
+        <h3>Alter</h3>
+        <div style="display:flex;gap:8px">
+          <div style="flex:1">
+            <label style="font-size:11px;color:var(--text-muted)">Min</label>
+            <input type="range" id="f-alter-min" min="0" max="100" value="0">
+          </div>
+          <div style="flex:1">
+            <label style="font-size:11px;color:var(--text-muted)">Max</label>
+            <input type="range" id="f-alter-max" min="0" max="100" value="100">
+          </div>
+        </div>
+        <div class="range-row"><span id="alter-min-lbl">0</span><span id="alter-max-lbl">100</span></div>
+      </div>
+
+      <div class="filter-actions">
+        <button class="btn" id="btn-reset">&#x21BA; Zur&uuml;cksetzen</button>
+      </div>
+    </aside>
+
+    <!-- Main content -->
+    <main class="content">
+      <!-- KPIs -->
+      <div class="kpi-row">
+        <div class="kpi-card">
+          <div class="kpi-label">Gesamtumsatz</div>
+          <div class="kpi-value" id="kpi-total">&#8212;</div>
+          <div class="kpi-sub" id="kpi-total-sub"></div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">&Oslash; Monatsumsatz / Person</div>
+          <div class="kpi-value" id="kpi-avg-monthly">&#8212;</div>
+          <div class="kpi-sub" id="kpi-avg-monthly-sub"></div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Top-Abteilung</div>
+          <div class="kpi-value" id="kpi-top-dept">&#8212;</div>
+          <div class="kpi-sub" id="kpi-top-dept-sub"></div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">&Oslash; Alter</div>
+          <div class="kpi-value" id="kpi-avg-age">&#8212;</div>
+          <div class="kpi-sub" id="kpi-avg-age-sub"></div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Teilzeitquote</div>
+          <div class="kpi-value" id="kpi-tz">&#8212;</div>
+          <div class="kpi-sub" id="kpi-tz-sub"></div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Headcount</div>
+          <div class="kpi-value" id="kpi-headcount">&#8212;</div>
+          <div class="kpi-sub" id="kpi-headcount-sub"></div>
+        </div>
+      </div>
+
+      <!-- Charts -->
+      <div class="charts-grid">
+        <!-- Timeline -->
+        <div class="chart-card wide">
+          <div class="chart-title">&#x1F4C8; Umsatzentwicklung &uuml;ber die Zeit</div>
+          <div class="chart-wrap"><canvas id="chart-timeline"></canvas></div>
+        </div>
+        <!-- Dept bar -->
+        <div class="chart-card">
+          <div class="chart-title">&#x1F3E2; Umsatz nach Abteilung</div>
+          <div class="chart-wrap"><canvas id="chart-dept"></canvas></div>
+        </div>
+        <!-- Top Berufe -->
+        <div class="chart-card">
+          <div class="chart-title">&#x1F3C6; Top 10 Berufe nach Umsatz</div>
+          <div class="chart-wrap"><canvas id="chart-berufe"></canvas></div>
+        </div>
+        <!-- Distribution -->
+        <div class="chart-card">
+          <div class="chart-title">&#x1F4CA; Umsatzverteilung (Histogramm)</div>
+          <div class="chart-wrap"><canvas id="chart-dist"></canvas></div>
+        </div>
+        <!-- Heatmap Monat x Abteilung -->
+        <div class="chart-card">
+          <div class="chart-title">&#x1F525; Saisonalitat: Umsatz-Heatmap</div>
+          <div id="chart-heatmap-wrap" style="overflow:auto;max-height:260px;"></div>
+        </div>
+      </div>
+
+      <!-- Summary -->
+      <div class="summary-bar" id="summary-bar">Lade Daten...</div>
+    </main>
+  </div>
+</div>
+
+<script>
+const ALL_ROWS = [{"vorname": "Julia", "nachname": "Krause", "stadt": "Hamburg", "bundesland": "Hamburg", "abteilung": "Customer Support", "beruf": "CX Spezialist", "teilzeit": "Nein", "alter": 29, "umsatz_gesamt": 231966.49, "monatsumsatz": [5891.12, 3469.08, 960.83, 7931.03, 3677.95, 7231.46, 5113.39, 8277.18, 4218.56, 584.5, 12000.0, 4865.32, 10780.03, 2965.2, 11760.33, 11374.85, 900.49, 7650.15, 4359.73, 9613.15, 8152.93, 12000.0, 1970.36, 8384.51, 8438.17, 375.83, 806.8, 9342.18, 4395.94, 4594.25, 6806.94, 7261.14, 8148.74, 12000.0, 5133.78, 10530.57]}, {"vorname": "Sandra", "nachname": "Fischer", "stadt": "Dortmund", "bundesland": "Nordrhein-Westfalen", "abteilung": "Customer Support", "beruf": "Helpdesk Agent", "teilzeit": "Ja", "alter": 38, "umsatz_gesamt": 114746.23, "monatsumsatz": [1822.5, 4750.06, 1669.54, 5707.22, 2529.39, 5009.47, 2821.84, 4494.15, 312.51, 6568.25, 1547.13, 473.47, 5169.34, 217.39, 186.18, 1483.7, 5035.37, 3728.01, 1431.27, 2841.37, 686.34, 6539.52, 3208.73, 1768.08, 1992.03, 3271.82, 5782.41, 4310.14, 4666.75, 982.59, 1866.23, 3472.11, 5573.32, 3973.0, 6265.38, 2589.62]}, {"vorname": "Marie", "nachname": "Werner", "stadt": "Bremen", "bundesland": "Bremen", "abteilung": "Customer Support", "beruf": "Helpdesk Agent", "teilzeit": "Nein", "alter": 30, "umsatz_gesamt": 207510.73, "monatsumsatz": [4540.82, 10155.93, 8127.82, 10833.67, 7386.18, 3611.4, 6575.25, 4.87, 3442.96, 5932.46, 8003.79, 9034.94, 5021.87, 4775.33, 2564.42, 5678.23, 10814.17, 9552.3, 2036.3, 1017.55, 6185.42, 8734.58, 4625.6, 11294.24, 8112.29, 7266.19, 2695.69, 2389.56, 293.1, 2938.11, 5701.64, 10196.85, 873.94, 5719.29, 8690.76, 2683.21]}, {"vorname": "Michael", "nachname": "Huber", "stadt": "Winterthur", "bundesland": "Zürich", "abteilung": "Customer Support", "beruf": "Service Desk Analyst", "teilzeit": "Nein", "alter": 49, "umsatz_gesamt": 228374.17, "monatsumsatz": [7693.93, 4790.47, 10791.2, 3865.34, 1780.01, 1514.3, 7491.81, 7024.38, 8545.83, 5256.48, 8244.01, 4069.59, 5459.95, 4646.15, 9517.15, 1372.97, 7856.56, 10532.47, 6616.02, 10385.91, 5160.84, 12000.0, 5710.63, 11418.39, 4306.29, 7879.82, 3750.58, 3750.28, 3058.68, 11443.11, 8241.85, 5691.21, 1094.7, 1178.03, 5959.9, 10275.33]}, {"vorname": "Jana", "nachname": "Lange", "stadt": "Duisburg", "bundesland": "Nordrhein-Westfalen", "abteilung": "Customer Support", "beruf": "Service Desk Analyst", "teilzeit": "Ja", "alter": 60, "umsatz_gesamt": 115695.0, "monatsumsatz": [4722.59, 718.14, 5161.72, 711.8, 5957.08, 2358.35, 764.08, 5872.35, 5008.93, 5217.64, 6751.59, 3194.73, 3883.11, 2290.29, 2275.66, 1377.98, 2763.75, 930.73, 1130.88, 5251.25, 4592.94, 222.3, 4555.36, 4242.97, 5055.68, 4800.82, 1444.0, 403.75, 3563.66, 2678.65, 4032.14, 5233.27, 1468.4, 305.23, 3028.84, 3724.34]}, {"vorname": "Claudia", "nachname": "Schulz", "stadt": "Linz", "bundesland": "Oberösterreich", "abteilung": "Customer Support", "beruf": "Service Desk Analyst", "teilzeit": "Ja", "alter": 58, "umsatz_gesamt": 115402.07, "monatsumsatz": [2901.85, 4963.47, 5584.17, 1039.41, 1001.19, 1733.01, 1122.59, 5051.91, 3716.46, 5972.1, 6567.71, 3343.8, 1053.69, 2073.3, 3369.49, 3918.42, 2454.81, 2950.36, 4260.85, 2663.11, 1003.52, 3901.24, 5491.58, 1521.65, 176.55, 1214.15, 1732.02, 4684.44, 3393.9, 4635.29, 2971.88, 3064.84, 3436.28, 1848.43, 3747.43, 6837.17]}, {"vorname": "Jana", "nachname": "Richter", "stadt": "Stuttgart", "bundesland": "Baden-Württemberg", "abteilung": "Customer Support", "beruf": "Support Mitarbeiter", "teilzeit": "Ja", "alter": 64, "umsatz_gesamt": 100742.66, "monatsumsatz": [5318.35, 1140.43, 131.48, 3027.8, 738.97, 4266.66, 4752.76, 2251.15, 3841.93, 5321.62, 4299.63, 4098.08, 258.99, 583.81, 5016.72, 289.41, 694.74, 2665.89, 741.57, 1516.43, 4211.21, 1417.91, 4731.61, 64.2, 2272.71, 545.29, 3121.86, 3736.79, 4204.36, 2512.95, 5391.73, 3069.51, 3706.19, 1950.68, 5414.84, 3434.4]}, {"vorname": "Christine", "nachname": "Becker", "stadt": "Linz", "bundesland": "Oberösterreich", "abteilung": "Einkauf", "beruf": "Category Manager", "teilzeit": "Nein", "alter": 43, "umsatz_gesamt": 227444.07, "monatsumsatz": [8838.48, 10309.78, 9655.39, 3485.43, 3451.56, 8569.7, 4156.36, 5308.51, 3077.33, 6611.29, 2788.54, 7432.38, 10076.66, 7518.65, 1647.28, 7388.12, 7041.97, 2909.5, 8038.01, 6372.5, 7655.33, 724.38, 5703.56, 9899.54, 1085.88, 8324.27, 62.18, 6604.23, 11149.2, 4882.89, 11220.39, 10540.8, 5729.38, 2752.49, 12000.0, 4432.11]}, {"vorname": "Jana", "nachname": "Klein", "stadt": "Köln", "bundesland": "Nordrhein-Westfalen", "abteilung": "Einkauf", "beruf": "Category Manager", "teilzeit": "Ja", "alter": 21, "umsatz_gesamt": 121983.19, "monatsumsatz": [4649.96, 825.34, 959.89, 4082.89, 3578.45, 2308.6, 3575.33, 2808.3, 1508.48, 3817.26, 6502.77, 4693.96, 618.58, 4777.86, 4505.27, 4611.59, 2041.05, 1761.0, 948.95, 19.47, 4332.55, 4965.8, 6706.03, 5257.54, 2741.48, 574.62, 3751.8, 5050.02, 3045.98, 1193.47, 2243.48, 969.29, 5721.0, 6364.8, 6337.61, 4132.72]}, {"vorname": "Franziska", "nachname": "Klein", "stadt": "Dresden", "bundesland": "Sachsen", "abteilung": "Einkauf", "beruf": "Category Manager", "teilzeit": "Nein", "alter": 61, "umsatz_gesamt": 200054.05, "monatsumsatz": [6327.45, 4104.79, 9266.01, 3544.55, 2957.4, 882.08, 3215.66, 4560.0, 9406.68, 2129.02, 5376.78, 4977.66, 988.42, 10183.97, 5336.83, 9136.16, 1226.78, 1047.57, 5171.75, 6683.82, 6149.29, 1425.44, 1236.74, 7648.23, 6446.79, 8471.94, 10364.62, 148.09, 4965.72, 9350.03, 8698.13, 6714.44, 11912.76, 3349.85, 7191.24, 9457.36]}, {"vorname": "Petra", "nachname": "Schwarz", "stadt": "Nürnberg", "bundesland": "Bayern", "abteilung": "Einkauf", "beruf": "Category Manager", "teilzeit": "Ja", "alter": 36, "umsatz_gesamt": 97338.08000000003, "monatsumsatz": [1175.58, 315.81, 4414.42, 365.75, 1881.63, 300.85, 2860.73, 5516.32, 3186.76, 392.47, 3504.02, 5874.26, 370.02, 366.99, 5170.92, 2422.65, 5649.58, 3418.05, 3473.51, 238.45, 491.9, 4535.87, 3900.07, 2182.95, 1408.13, 3616.52, 1885.1, 1593.69, 785.27, 3873.0, 2743.35, 5574.11, 5614.41, 64.28, 4286.0, 3884.66]}, {"vorname": "Lukas", "nachname": "Gruber", "stadt": "Frankfurt", "bundesland": "Hessen", "abteilung": "Einkauf", "beruf": "Einkäufer", "teilzeit": "Nein", "alter": 31, "umsatz_gesamt": 225061.61, "monatsumsatz": [7427.88, 3411.74, 4347.24, 1857.34, 7818.91, 3043.59, 10259.72, 5082.74, 4387.73, 3802.74, 9392.36, 10418.61, 4462.86, 8464.91, 5789.61, 4442.56, 6658.94, 3045.33, 3679.84, 4132.28, 8465.94, 10153.8, 11798.99, 9098.1, 8076.39, 4823.22, 8391.74, 1941.54, 2573.5, 4806.73, 4061.25, 6606.91, 8364.69, 9753.7, 2218.18, 12000.0]}, {"vorname": "Max", "nachname": "Moser", "stadt": "Duisburg", "bundesland": "Nordrhein-Westfalen", "abteilung": "Einkauf", "beruf": "Einkäufer", "teilzeit": "Nein", "alter": 22, "umsatz_gesamt": 205591.8, "monatsumsatz": [2707.43, 2132.11, 6967.15, 11418.48, 4285.66, 8055.55, 2814.39, 3421.65, 837.71, 2670.28, 6704.88, 4531.18, 7121.76, 7489.35, 1828.74, 6802.34, 9692.4, 11503.91, 2023.67, 3758.58, 9427.92, 9828.35, 8843.57, 3818.18, 3882.45, 7339.47, 3978.76, 5759.45, 5344.3, 9297.2, 5843.66, 1305.99, 7746.62, 1131.24, 3872.5, 11404.92]}, {"vorname": "Lukas", "nachname": "Steiner", "stadt": "Stuttgart", "bundesland": "Baden-Württemberg", "abteilung": "Einkauf", "beruf": "Einkäufer", "teilzeit": "Nein", "alter": 47, "umsatz_gesamt": 239770.4399999999, "monatsumsatz": [10184.13, 2264.2, 9572.23, 9975.38, 829.9, 10173.46, 9540.55, 8075.73, 1670.15, 4179.09, 3487.01, 2127.18, 4569.78, 4071.5, 5388.8, 7175.21, 6986.93, 6412.41, 11081.95, 10435.6, 5019.61, 507.36, 12000.0, 9682.55, 8772.81, 6413.26, 10972.81, 1312.43, 2978.77, 7976.33, 1996.06, 7352.13, 6758.64, 8901.43, 8925.06, 12000.0]}, {"vorname": "Niklas", "nachname": "Koch", "stadt": "Wien", "bundesland": "Wien", "abteilung": "Einkauf", "beruf": "Lieferantenmanager", "teilzeit": "Nein", "alter": 40, "umsatz_gesamt": 217914.36, "monatsumsatz": [6072.63, 6294.31, 11312.08, 8521.48, 8090.92, 10726.39, 6406.83, 10529.73, 5068.64, 176.23, 1469.29, 5256.01, 573.1, 611.33, 3203.74, 9426.39, 11802.39, 8200.68, 1757.14, 744.39, 9412.29, 2815.21, 7468.17, 4949.82, 4888.02, 6653.98, 8106.31, 6742.62, 2691.69, 7765.43, 4666.64, 6131.07, 9562.0, 9606.57, 9562.52, 648.32]}, {"vorname": "Andreas", "nachname": "Steiner", "stadt": "Düsseldorf", "bundesland": "Nordrhein-Westfalen", "abteilung": "Einkauf", "beruf": "Lieferantenmanager", "teilzeit": "Ja", "alter": 40, "umsatz_gesamt": 111008.88, "monatsumsatz": [4756.67, 4748.06, 2217.16, 946.48, 5002.47, 4221.24, 3670.07, 5923.4, 3923.86, 53.98, 5638.02, 2065.71, 3582.3, 5070.22, 805.75, 692.57, 642.22, 3319.34, 1634.09, 3628.98, 4305.67, 1404.82, 4376.24, 1821.49, 2638.07, 4888.82, 5076.62, 553.79, 2541.45, 1660.08, 21.27, 4626.72, 3822.68, 1807.49, 5114.49, 3806.59]}, {"vorname": "Emma", "nachname": "Wagner", "stadt": "Berlin", "bundesland": "Berlin", "abteilung": "Einkauf", "beruf": "Lieferantenmanager", "teilzeit": "Nein", "alter": 56, "umsatz_gesamt": 247767.97, "monatsumsatz": [6577.74, 3223.54, 1297.25, 766.04, 11860.33, 7687.14, 10337.9, 3133.76, 8533.13, 12000.0, 4123.32, 2069.02, 8267.12, 9716.62, 9665.16, 9628.36, 7200.4, 7926.36, 8169.07, 8655.4, 7864.81, 12000.0, 3580.08, 5776.21, 4193.37, 381.45, 8496.83, 6864.51, 2278.98, 8718.6, 2668.36, 6415.62, 9418.76, 12000.0, 9271.78, 7000.95]}, {"vorname": "Florian", "nachname": "Hartmann", "stadt": "Hamburg", "bundesland": "Hamburg", "abteilung": "Einkauf", "beruf": "Procurement Manager", "teilzeit": "Ja", "alter": 42, "umsatz_gesamt": 124560.23, "monatsumsatz": [3637.83, 3255.78, 5241.72, 1128.98, 4570.18, 4345.83, 3353.1, 2876.37, 5216.84, 2297.45, 6603.44, 105.8, 5060.66, 5195.22, 703.9, 5997.43, 2873.53, 1455.56, 3626.41, 1227.08, 5490.76, 3809.35, 5351.05, 2626.57, 2881.71, 1940.0, 1569.37, 3076.9, 2983.66, 591.65, 5887.91, 2816.94, 5038.39, 6308.88, 2557.86, 2856.12]}, {"vorname": "Tim", "nachname": "Schmidt", "stadt": "Hamburg", "bundesland": "Hamburg", "abteilung": "Einkauf", "beruf": "Procurement Manager", "teilzeit": "Nein", "alter": 47, "umsatz_gesamt": 174961.52, "monatsumsatz": [3681.68, 3996.57, 8659.15, 9322.03, 6811.12, 1019.48, 631.31, 1888.92, 7414.06, 9300.77, 3755.02, 9134.75, 5245.15, 4774.08, 3278.0, 9059.32, 1365.81, 5158.96, 3398.96, 8141.84, 5839.59, 9206.43, 626.76, 5454.63, 6472.71, 83.02, 3617.03, 2534.81, 1646.82, 3066.23, 3937.47, 92.76, 8964.17, 2424.59, 5246.86, 9710.66]}, {"vorname": "Max", "nachname": "Schröder", "stadt": "Lausanne", "bundesland": "Waadt", "abteilung": "Einkauf", "beruf": "Procurement Manager", "teilzeit": "Nein", "alter": 44, "umsatz_gesamt": 183294.0400000001, "monatsumsatz": [3189.79, 425.58, 5956.26, 2492.33, 11197.49, 3967.24, 32.86, 8059.6, 10882.56, 11526.2, 9232.5, 2058.19, 972.89, 5526.42, 8682.76, 1215.49, 3070.71, 2773.92, 11863.99, 3552.27, 5571.33, 1377.36, 2410.88, 544.33, 3138.13, 8657.24, 3752.49, 8862.48, 1139.98, 9098.45, 550.67, 10223.98, 7960.26, 2353.07, 4933.88, 6040.46]}, {"vorname": "Simon", "nachname": "Hoffmann", "stadt": "Hamburg", "bundesland": "Hamburg", "abteilung": "Einkauf", "beruf": "Sourcing Specialist", "teilzeit": "Ja", "alter": 59, "umsatz_gesamt": 108401.06, "monatsumsatz": [886.23, 1896.41, 1278.33, 4489.61, 5519.36, 3696.46, 2654.3, 1303.47, 5379.56, 966.09, 849.78, 5037.06, 1898.29, 2318.7, 4746.46, 1486.72, 3867.72, 1489.0, 3605.99, 4327.08, 1709.52, 6494.83, 185.09, 5844.78, 4729.47, 1109.41, 3641.56, 1131.88, 2350.51, 3877.02, 4702.81, 4762.67, 1436.05, 2662.61, 1663.46, 4402.77]}, {"vorname": "Stefan", "nachname": "Schmidt", "stadt": "Düsseldorf", "bundesland": "Nordrhein-Westfalen", "abteilung": "Einkauf", "beruf": "Sourcing Specialist", "teilzeit": "Nein", "alter": 27, "umsatz_gesamt": 249549.01, "monatsumsatz": [6539.52, 1916.16, 10819.3, 7197.77, 10533.03, 6377.16, 9028.6, 1118.28, 7912.71, 12000.0, 7442.15, 16.56, 10127.54, 7328.44, 5177.96, 5048.21, 10497.89, 8371.71, 5147.48, 11261.06, 5785.48, 10607.67, 4837.15, 11103.77, 9804.88, 9041.66, 6913.45, 5105.87, 3054.22, 9190.31, 10921.02, 1005.81, 7179.51, 7503.49, 3557.71, 75.48]}, {"vorname": "Stefan", "nachname": "Schäfer", "stadt": "Basel", "bundesland": "Basel-Stadt", "abteilung": "Einkauf", "beruf": "Sourcing Specialist", "teilzeit": "Ja", "alter": 22, "umsatz_gesamt": 97164.85, "monatsumsatz": [1138.22, 3399.38, 1279.05, 4112.43, 5013.99, 1233.48, 4972.49, 5271.82, 4448.25, 3003.14, 5635.61, 497.63, 3704.64, 128.27, 4301.21, 227.32, 439.49, 1067.95, 1511.45, 422.65, 4929.72, 6285.81, 2812.67, 3112.77, 2184.02, 1708.58, 2337.01, 709.83, 35.39, 4321.71, 379.43, 4475.71, 273.1, 5852.93, 2468.13, 3469.57]}, {"vorname": "Christian", "nachname": "Neumann", "stadt": "Essen", "bundesland": "Nordrhein-Westfalen", "abteilung": "Finance", "beruf": "CFO Assistant", "teilzeit": "Ja", "alter": 28, "umsatz_gesamt": 107530.32, "monatsumsatz": [2347.25, 2273.95, 2905.39, 461.53, 1510.2, 1479.54, 3750.2, 3562.84, 1173.29, 738.11, 2102.14, 6546.88, 1793.97, 3349.04, 4824.46, 1977.25, 2008.42, 4892.85, 5157.05, 5845.35, 816.75, 2212.59, 6536.22, 1385.88, 1696.59, 5208.7, 5812.35, 1748.69, 4169.75, 2946.04, 3455.28, 1454.55, 2256.33, 5633.81, 2711.25, 785.83]}, {"vorname": "Eva", "nachname": "Braun", "stadt": "Salzburg", "bundesland": "Salzburg", "abteilung": "Finance", "beruf": "Controller", "teilzeit": "Ja", "alter": 61, "umsatz_gesamt": 125575.83, "monatsumsatz": [4514.18, 3106.08, 5704.72, 5997.43, 4033.69, 1617.07, 241.39, 4537.61, 2823.0, 4495.42, 6320.9, 1252.28, 3160.78, 3427.84, 2950.35, 547.45, 2087.77, 1999.85, 4020.8, 5146.4, 1978.82, 4786.35, 1988.7, 6521.84, 4393.26, 2970.52, 2728.96, 1887.1, 1939.64, 5821.11, 2425.05, 3087.58, 5928.72, 4537.86, 3743.9, 2851.41]}, {"vorname": "Jan", "nachname": "Moser", "stadt": "Stuttgart", "bundesland": "Baden-Württemberg", "abteilung": "Finance", "beruf": "Controller", "teilzeit": "Nein", "alter": 65, "umsatz_gesamt": 226479.5699999999, "monatsumsatz": [2793.44, 8730.11, 9155.02, 2196.82, 8156.55, 4027.59, 1071.6, 4263.4, 8930.52, 4237.78, 10875.65, 4572.18, 2814.04, 3175.75, 10214.57, 5646.44, 10396.72, 7002.9, 11331.61, 854.59, 10673.11, 6906.59, 11971.47, 5267.04, 3222.24, 583.87, 10250.88, 1648.38, 2403.56, 4910.3, 6832.84, 10879.45, 5490.86, 4366.09, 9876.22, 10749.39]}, {"vorname": "Florian", "nachname": "Zimmermann", "stadt": "Duisburg", "bundesland": "Nordrhein-Westfalen", "abteilung": "Finance", "beruf": "Controller", "teilzeit": "Ja", "alter": 61, "umsatz_gesamt": 109104.82, "monatsumsatz": [1642.76, 3805.41, 3619.81, 1290.12, 5139.44, 889.94, 4266.94, 5810.4, 2377.47, 337.76, 2062.0, 5658.62, 938.89, 5141.32, 5127.61, 3335.72, 3300.73, 568.35, 611.44, 4762.86, 728.72, 425.52, 5388.62, 1533.79, 1069.92, 2163.14, 4117.71, 5625.45, 504.24, 3516.71, 5504.57, 449.92, 5982.97, 1364.48, 4457.31, 5584.16]}, {"vorname": "Tim", "nachname": "Hoffmann", "stadt": "Berlin", "bundesland": "Berlin", "abteilung": "Finance", "beruf": "Treasury Manager", "teilzeit": "Nein", "alter": 55, "umsatz_gesamt": 205598.5099999999, "monatsumsatz": [7776.13, 3188.08, 2354.3, 2760.22, 6837.47, 2948.76, 6607.71, 11321.57, 4050.77, 10534.38, 6742.97, 9985.1, 7987.62, 4976.95, 8793.27, 4226.11, 1679.5, 6558.56, 2208.57, 10672.37, 11883.88, 12000.0, 7230.43, 11579.15, 802.77, 8834.36, 582.17, 76.61, 1649.9, 7568.42, 815.62, 1812.36, 2624.64, 6292.93, 834.21, 8800.65]}, {"vorname": "Sabine", "nachname": "Klein", "stadt": "Berlin", "bundesland": "Berlin", "abteilung": "HR", "beruf": "HR Business Partner", "teilzeit": "Nein", "alter": 22, "umsatz_gesamt": 231997.98, "monatsumsatz": [10442.4, 3014.55, 7697.78, 4796.14, 11773.8, 6434.59, 11270.85, 1384.1, 11644.81, 2464.24, 12000.0, 3663.44, 1170.75, 4693.29, 8742.54, 3764.13, 7274.51, 6137.08, 4622.35, 6919.06, 3056.67, 9781.24, 23.34, 12000.0, 5815.28, 7769.84, 8903.4, 8047.54, 4370.66, 839.69, 7970.85, 3962.4, 3766.99, 11702.61, 9932.61, 4144.45]}, {"vorname": "Max", "nachname": "Meier", "stadt": "Graz", "bundesland": "Steiermark", "abteilung": "HR", "beruf": "HR Business Partner", "teilzeit": "Ja", "alter": 59, "umsatz_gesamt": 122418.02, "monatsumsatz": [4057.27, 1607.63, 5995.88, 2698.39, 2091.46, 4900.37, 2634.42, 5963.75, 4653.79, 1634.93, 5593.85, 4056.67, 1893.41, 3838.07, 3796.62, 995.89, 835.41, 1239.72, 1241.66, 356.15, 2104.89, 1939.49, 3717.5, 2233.21, 3801.89, 1562.4, 1604.06, 5148.1, 5912.93, 4075.8, 571.35, 5776.63, 4714.15, 6339.5, 6848.15, 5982.63]}, {"vorname": "Nina", "nachname": "Hoffmann", "stadt": "Zürich", "bundesland": "Zürich", "abteilung": "HR", "beruf": "HR Manager", "teilzeit": "Nein", "alter": 39, "umsatz_gesamt": 197890.91, "monatsumsatz": [5860.2, 4490.36, 2482.01, 5041.72, 10858.06, 7008.95, 8346.28, 10280.78, 9187.13, 5249.26, 81.37, 4854.27, 8137.53, 9217.24, 11441.16, 5028.26, 8970.19, 6553.59, 7239.03, 2646.46, 2633.06, 6014.54, 400.54, 4638.59, 7334.73, 4366.62, 1980.54, 5608.68, 1531.53, 7467.08, 323.6, 4728.24, 6772.7, 374.01, 8869.95, 1872.65]}, {"vorname": "Max", "nachname": "Schwarz", "stadt": "Hamburg", "bundesland": "Hamburg", "abteilung": "HR", "beruf": "HR Manager", "teilzeit": "Nein", "alter": 47, "umsatz_gesamt": 222872.45, "monatsumsatz": [6865.39, 3940.19, 4442.17, 2514.08, 3203.73, 11239.86, 7776.42, 7309.57, 2053.66, 10061.95, 2254.95, 5236.49, 10686.85, 6912.0, 6683.4, 8215.37, 10114.22, 9312.0, 2748.58, 385.2, 3785.44, 3694.82, 2911.56, 12000.0, 9464.77, 3398.52, 7865.26, 4747.58, 10974.57, 5506.22, 3178.56, 2959.53, 6736.42, 3625.83, 8067.29, 12000.0]}, {"vorname": "Andreas", "nachname": "Winkler", "stadt": "Zürich", "bundesland": "Zürich", "abteilung": "HR", "beruf": "HR Manager", "teilzeit": "Nein", "alter": 37, "umsatz_gesamt": 247790.9399999999, "monatsumsatz": [9183.17, 6484.45, 1452.66, 11806.13, 9391.62, 4166.45, 5140.54, 4446.85, 6071.53, 4708.99, 11724.14, 11348.17, 1139.82, 10376.51, 7627.02, 9944.49, 8487.7, 5225.85, 8805.54, 11585.68, 3240.99, 11153.15, 7426.79, 6672.27, 4704.2, 7895.08, 3220.75, 10220.56, 9968.77, 1039.95, 10579.57, 2926.36, 5576.5, 8422.58, 5230.05, 396.06]}, {"vorname": "Sarah", "nachname": "Richter", "stadt": "Essen", "bundesland": "Nordrhein-Westfalen", "abteilung": "HR", "beruf": "Personalreferent", "teilzeit": "Ja", "alter": 18, "umsatz_gesamt": 101764.95, "monatsumsatz": [3823.3, 683.55, 273.09, 327.16, 1752.82, 5664.54, 3827.22, 4516.75, 615.53, 84.63, 1961.94, 3303.13, 1839.81, 5213.69, 1514.87, 5170.34, 684.52, 392.06, 2950.48, 3462.13, 4118.71, 1046.92, 5596.88, 6548.97, 459.98, 1340.23, 3348.44, 2497.04, 3576.76, 3710.51, 4654.16, 2282.27, 5451.03, 2051.74, 4060.82, 2958.93]}, {"vorname": "Julia", "nachname": "Braun", "stadt": "Wien", "bundesland": "Wien", "abteilung": "HR", "beruf": "Recruiter", "teilzeit": "Nein", "alter": 50, "umsatz_gesamt": 214894.64, "monatsumsatz": [1721.2, 5865.27, 4841.0, 4192.84, 10600.76, 7960.01, 3972.8, 3522.89, 11403.7, 8532.27, 6553.03, 7746.42, 8123.04, 7012.44, 1376.66, 4152.09, 2884.17, 7707.17, 11023.29, 2925.93, 478.53, 12000.0, 5262.94, 10987.65, 1224.44, 2771.18, 8687.71, 296.47, 6202.41, 9245.93, 6171.71, 6104.83, 5841.66, 4090.79, 8991.09, 4420.32]}, {"vorname": "Thomas", "nachname": "Neumann", "stadt": "Leipzig", "bundesland": "Sachsen", "abteilung": "HR", "beruf": "Recruiter", "teilzeit": "Nein", "alter": 61, "umsatz_gesamt": 181868.41, "monatsumsatz": [7999.21, 5889.96, 7085.91, 381.39, 1124.34, 2791.93, 7224.22, 6734.94, 8592.24, 9678.28, 5789.37, 6199.08, 3004.46, 9388.44, 9105.69, 1915.91, 5071.37, 3334.46, 2583.77, 9161.93, 1226.52, 5243.0, 4953.92, 4746.59, 2856.83, 469.26, 5513.1, 1497.91, 11067.54, 945.6, 3518.14, 7543.68, 10625.42, 4990.56, 2653.58, 959.86]}, {"vorname": "David", "nachname": "Wagner", "stadt": "Basel", "bundesland": "Basel-Stadt", "abteilung": "HR", "beruf": "Recruiter", "teilzeit": "Nein", "alter": 23, "umsatz_gesamt": 213014.7799999999, "monatsumsatz": [1696.22, 1877.19, 900.78, 32.11, 5406.04, 7125.73, 3495.11, 2777.71, 8483.47, 9701.23, 6265.63, 9485.91, 9978.24, 8508.54, 7500.7, 7934.2, 11204.02, 5101.67, 6534.75, 7771.62, 10900.94, 11407.51, 985.46, 2289.73, 3322.21, 8088.74, 6830.48, 3463.33, 1492.24, 8264.14, 8396.8, 11312.11, 6005.67, 6814.37, 1110.1, 550.08]}, {"vorname": "Christian", "nachname": "Kaiser", "stadt": "Essen", "bundesland": "Nordrhein-Westfalen", "abteilung": "HR", "beruf": "Talent Manager", "teilzeit": "Nein", "alter": 56, "umsatz_gesamt": 201320.4699999999, "monatsumsatz": [8343.41, 8838.53, 2842.85, 10515.1, 11828.35, 6255.01, 4962.72, 3301.85, 6680.62, 8165.01, 10145.93, 2416.84, 7330.5, 6003.19, 562.61, 4132.98, 7719.79, 4573.86, 6293.56, 8355.7, 4899.11, 4138.46, 2537.53, 7423.41, 2602.46, 2433.72, 10290.49, 1732.22, 5556.3, 691.49, 4952.13, 4998.09, 6359.9, 5360.18, 3518.94, 4557.63]}, {"vorname": "Felix", "nachname": "Schneider", "stadt": "Leipzig", "bundesland": "Sachsen", "abteilung": "HR", "beruf": "Talent Manager", "teilzeit": "Nein", "alter": 20, "umsatz_gesamt": 235576.0299999999, "monatsumsatz": [9980.92, 7391.83, 3364.48, 6516.37, 7897.31, 2152.25, 10205.13, 187.9, 2485.9, 1989.84, 11325.53, 11328.45, 10031.85, 3232.19, 6767.5, 6800.35, 10193.31, 8124.42, 6486.75, 4606.15, 8876.94, 10908.87, 9512.49, 1082.3, 8050.93, 3735.28, 1172.23, 2785.73, 912.22, 7262.02, 7366.38, 7147.3, 11627.05, 4504.0, 8750.9, 10812.96]}, {"vorname": "Sabine", "nachname": "Schneider", "stadt": "Klagenfurt", "bundesland": "Kärnten", "abteilung": "HR", "beruf": "Talent Manager", "teilzeit": "Nein", "alter": 41, "umsatz_gesamt": 229132.1500000001, "monatsumsatz": [4191.41, 9913.34, 10578.62, 478.86, 7782.3, 1238.7, 11621.3, 7602.8, 3281.94, 10238.35, 7985.11, 7868.21, 4067.92, 4088.0, 7052.15, 10778.72, 934.05, 3019.04, 11672.09, 2674.79, 4870.11, 11277.87, 4761.45, 10938.67, 9581.46, 71.26, 10584.41, 5278.78, 2759.89, 6174.5, 3369.71, 1802.88, 1888.29, 8307.88, 11273.98, 9123.31]}, {"vorname": "Eva", "nachname": "Zimmermann", "stadt": "Frankfurt", "bundesland": "Hessen", "abteilung": "HR", "beruf": "Talent Manager", "teilzeit": "Nein", "alter": 44, "umsatz_gesamt": 207839.46, "monatsumsatz": [5313.91, 646.87, 11963.51, 8539.83, 1116.32, 11055.29, 10767.45, 6237.11, 8410.16, 5140.39, 12000.0, 1171.65, 1032.23, 1441.95, 9839.55, 897.97, 6813.85, 5219.79, 11570.62, 2841.26, 3131.89, 4347.12, 11051.27, 9670.01, 7941.81, 3435.02, 3263.47, 896.25, 2432.55, 9359.24, 7016.5, 1864.93, 1972.5, 6431.56, 5609.87, 7395.76]}, {"vorname": "Thomas", "nachname": "Schröder", "stadt": "Düsseldorf", "bundesland": "Nordrhein-Westfalen", "abteilung": "IT", "beruf": "Cloud Architect", "teilzeit": "Nein", "alter": 56, "umsatz_gesamt": 197420.09, "monatsumsatz": [5699.93, 1200.82, 3457.22, 3613.81, 572.99, 5037.91, 9526.79, 5485.36, 1330.29, 12000.0, 8235.0, 226.81, 5566.06, 2612.93, 1722.92, 5150.87, 7377.71, 2886.77, 4998.81, 7972.46, 1027.37, 12000.0, 933.97, 7259.62, 5479.14, 10673.98, 6649.82, 4685.44, 5641.62, 7628.05, 11772.47, 3043.8, 194.91, 10881.58, 4758.27, 10114.59]}, {"vorname": "Anna", "nachname": "Becker", "stadt": "Luzern", "bundesland": "Luzern", "abteilung": "IT", "beruf": "Data Engineer", "teilzeit": "Nein", "alter": 45, "umsatz_gesamt": 189233.2, "monatsumsatz": [2185.04, 7436.79, 1582.96, 7799.97, 1907.73, 11192.71, 3288.23, 7855.06, 3004.67, 5131.44, 12000.0, 2284.25, 4280.49, 3299.5, 8393.3, 2809.73, 7865.82, 8444.38, 13.04, 5721.68, 1592.4, 3121.43, 9383.76, 128.16, 7512.45, 8824.78, 11857.86, 5067.77, 1586.1, 849.94, 4596.84, 8769.16, 1229.13, 4324.25, 12000.0, 1892.38]}, {"vorname": "Julia", "nachname": "Moser", "stadt": "Luzern", "bundesland": "Luzern", "abteilung": "IT", "beruf": "Data Engineer", "teilzeit": "Nein", "alter": 31, "umsatz_gesamt": 247029.98, "monatsumsatz": [9658.62, 2906.02, 11365.42, 8197.29, 10919.13, 5987.99, 2396.0, 8825.15, 10472.91, 2853.55, 2798.18, 3445.8, 6680.85, 1684.75, 1280.27, 11042.26, 8109.75, 7961.09, 7365.92, 9170.93, 6497.69, 583.23, 6655.63, 8565.21, 5317.28, 10641.9, 10764.0, 10425.23, 5889.66, 11812.74, 10992.08, 3363.2, 2665.11, 7957.98, 747.24, 11029.92]}, {"vorname": "Marie", "nachname": "Winkler", "stadt": "Wien", "bundesland": "Wien", "abteilung": "IT", "beruf": "Data Engineer", "teilzeit": "Ja", "alter": 65, "umsatz_gesamt": 126890.73, "monatsumsatz": [262.29, 5050.66, 5032.9, 2897.59, 3050.0, 5526.97, 1063.21, 3471.33, 4382.97, 885.83, 2673.1, 4143.77, 4766.56, 2722.19, 2307.98, 5877.0, 5495.46, 4574.25, 1641.58, 5781.56, 5822.95, 3124.64, 920.27, 2847.94, 3780.08, 4041.51, 1793.48, 4208.97, 5164.25, 4271.25, 5613.07, 3795.5, 1205.33, 4306.76, 2005.0, 2382.53]}, {"vorname": "Hannah", "nachname": "Gruber", "stadt": "Nürnberg", "bundesland": "Bayern", "abteilung": "IT", "beruf": "DevOps Engineer", "teilzeit": "Nein", "alter": 26, "umsatz_gesamt": 211816.96, "monatsumsatz": [9428.42, 563.54, 5767.09, 4454.55, 11211.52, 8536.81, 6190.91, 1496.13, 1006.5, 2212.31, 6200.61, 7084.27, 8975.3, 990.51, 10926.06, 9800.44, 10615.56, 11165.66, 4978.76, 4757.45, 4487.54, 5329.09, 1126.16, 3098.63, 3441.8, 1070.1, 8576.45, 4023.48, 1752.59, 459.64, 11008.75, 5669.46, 9973.33, 10472.01, 6473.72, 8491.81]}, {"vorname": "Anna", "nachname": "Hartmann", "stadt": "Essen", "bundesland": "Nordrhein-Westfalen", "abteilung": "IT", "beruf": "DevOps Engineer", "teilzeit": "Nein", "alter": 49, "umsatz_gesamt": 255145.0, "monatsumsatz": [2073.66, 10799.75, 1859.34, 3549.51, 9457.44, 6092.28, 6477.25, 8863.73, 6318.38, 9134.62, 12000.0, 8528.83, 6450.26, 1665.93, 2170.15, 8314.15, 7496.89, 10831.87, 8654.2, 524.31, 4371.59, 9930.28, 12000.0, 8426.22, 8125.82, 8465.04, 2808.04, 2870.02, 11587.16, 9412.44, 10847.69, 2328.19, 8139.68, 7871.79, 6080.24, 10618.25]}, {"vorname": "Lea", "nachname": "Hartmann", "stadt": "Basel", "bundesland": "Basel-Stadt", "abteilung": "IT", "beruf": "DevOps Engineer", "teilzeit": "Nein", "alter": 43, "umsatz_gesamt": 238361.26, "monatsumsatz": [5400.84, 489.28, 1644.44, 3996.49, 5684.93, 5483.86, 7275.13, 6186.07, 3935.59, 8460.34, 2242.53, 12000.0, 7984.65, 3231.73, 4036.48, 9939.47, 6388.08, 8504.88, 3597.49, 9788.99, 4420.29, 9298.53, 12000.0, 8055.09, 8604.95, 7833.5, 8256.52, 319.77, 5695.08, 11604.85, 9394.85, 9313.94, 6931.61, 9955.32, 8052.62, 2353.07]}, {"vorname": "Sabine", "nachname": "Schmitt", "stadt": "Innsbruck", "bundesland": "Tirol", "abteilung": "IT", "beruf": "DevOps Engineer", "teilzeit": "Nein", "alter": 45, "umsatz_gesamt": 203061.9, "monatsumsatz": [4272.29, 7963.79, 10597.17, 5394.9, 5154.63, 53.4, 2577.55, 3340.14, 8445.12, 10984.91, 7967.4, 11033.13, 5798.4, 3950.56, 2364.89, 1367.46, 8048.42, 5873.81, 11591.0, 3760.85, 4663.67, 5417.11, 1576.4, 4857.39, 4944.89, 1863.3, 8083.07, 9607.36, 11024.19, 7082.02, 8065.32, 3758.23, 2862.87, 1613.89, 5151.62, 1950.75]}, {"vorname": "Niklas", "nachname": "Schulz", "stadt": "Leipzig", "bundesland": "Sachsen", "abteilung": "IT", "beruf": "IT-Administrator", "teilzeit": "Nein", "alter": 61, "umsatz_gesamt": 260119.88, "monatsumsatz": [4241.17, 1535.45, 7588.82, 7533.75, 4502.07, 906.2, 9535.18, 9226.61, 4834.21, 10347.27, 9586.91, 12000.0, 4910.71, 5270.88, 6983.47, 10426.89, 10166.01, 1117.7, 11665.8, 7618.09, 8367.47, 11731.47, 10980.36, 5488.48, 10455.79, 8908.35, 5936.58, 3874.38, 3403.12, 6567.73, 1567.13, 10229.07, 9459.64, 12000.0, 10519.11, 634.01]}, {"vorname": "Florian", "nachname": "Fischer", "stadt": "Essen", "bundesland": "Nordrhein-Westfalen", "abteilung": "IT", "beruf": "Softwareentwickler", "teilzeit": "Ja", "alter": 26, "umsatz_gesamt": 99790.48999999998, "monatsumsatz": [3788.1, 884.7, 5718.1, 3138.03, 4697.92, 4324.59, 1001.78, 761.58, 4686.74, 1854.47, 6116.26, 5322.87, 158.52, 4358.38, 1631.88, 383.23, 4273.94, 3459.91, 462.42, 2731.19, 2160.74, 3447.31, 3911.51, 2537.05, 1377.63, 555.69, 3443.47, 4336.67, 1370.43, 3052.95, 264.23, 5177.57, 1467.31, 3255.18, 2642.56, 1035.58]}, {"vorname": "Franziska", "nachname": "Schmitt", "stadt": "Leipzig", "bundesland": "Sachsen", "abteilung": "IT", "beruf": "Softwareentwickler", "teilzeit": "Nein", "alter": 24, "umsatz_gesamt": 231634.08, "monatsumsatz": [8406.94, 2363.48, 9649.32, 8350.94, 5574.6, 6688.87, 11009.64, 1456.3, 1600.07, 6412.08, 7329.62, 7713.17, 3426.82, 8156.7, 5310.88, 9780.08, 10704.24, 5120.89, 10882.26, 5350.96, 1909.89, 11888.63, 6210.96, 10374.52, 9070.52, 2994.96, 9332.1, 5815.16, 2870.95, 5278.47, 8562.54, 2813.92, 4030.17, 12000.0, 1111.97, 2081.46]}, {"vorname": "Maria", "nachname": "Winkler", "stadt": "Dresden", "bundesland": "Sachsen", "abteilung": "IT", "beruf": "Softwareentwickler", "teilzeit": "Nein", "alter": 38, "umsatz_gesamt": 256057.44, "monatsumsatz": [8072.79, 1896.91, 1585.92, 6472.89, 11657.87, 6370.23, 10961.84, 9965.67, 3083.64, 11380.72, 6649.5, 11129.54, 8062.84, 3658.12, 1382.04, 11554.72, 1689.08, 11598.0, 10321.69, 8690.6, 11759.31, 12000.0, 11103.31, 5047.7, 8539.37, 150.32, 6438.87, 5457.43, 8073.94, 8068.09, 7014.72, 9869.01, 11283.5, 1495.18, 3226.74, 345.34]}, {"vorname": "Claudia", "nachname": "Kaiser", "stadt": "Bremen", "bundesland": "Bremen", "abteilung": "Marketing", "beruf": "Brand Manager", "teilzeit": "Nein", "alter": 29, "umsatz_gesamt": 260009.09, "monatsumsatz": [10602.2, 5156.5, 11229.9, 81.96, 4602.89, 5360.83, 3203.93, 3955.5, 6989.53, 7905.71, 3609.43, 4961.82, 2552.07, 7212.09, 5584.74, 1916.6, 8232.88, 11077.27, 10653.62, 9238.09, 8283.48, 8814.22, 12000.0, 5072.11, 2385.17, 10339.49, 5738.18, 5459.74, 11866.06, 4483.5, 8423.29, 10953.56, 9088.21, 11067.53, 11393.33, 10513.66]}, {"vorname": "Lena", "nachname": "Klein", "stadt": "Innsbruck", "bundesland": "Tirol", "abteilung": "Marketing", "beruf": "Brand Manager", "teilzeit": "Nein", "alter": 37, "umsatz_gesamt": 234828.81, "monatsumsatz": [7011.79, 1260.1, 544.16, 446.55, 11951.13, 1393.45, 2817.6, 6450.56, 4663.75, 5119.96, 12000.0, 9611.48, 5834.08, 6343.28, 8719.19, 10624.97, 7859.06, 10004.32, 7387.83, 11268.64, 3356.88, 9525.87, 2998.32, 6136.8, 2550.02, 3917.01, 11771.13, 4408.02, 10820.35, 7737.92, 726.6, 3310.58, 11618.48, 12000.0, 11373.84, 1265.09]}, {"vorname": "Christine", "nachname": "Steiner", "stadt": "Stuttgart", "bundesland": "Baden-Württemberg", "abteilung": "Marketing", "beruf": "Brand Manager", "teilzeit": "Nein", "alter": 55, "umsatz_gesamt": 235002.65, "monatsumsatz": [3230.87, 10389.91, 8283.76, 5482.03, 3625.46, 11992.48, 10240.03, 1279.84, 4576.37, 4953.64, 4083.04, 9650.05, 236.95, 8964.41, 4749.67, 97.18, 10380.81, 9339.74, 11683.23, 10927.4, 8942.07, 11493.18, 12000.0, 10705.23, 2485.28, 8660.87, 2628.05, 2281.58, 3007.52, 9066.93, 9209.65, 8170.26, 1641.35, 1340.86, 8658.92, 544.03]}, {"vorname": "Lea", "nachname": "Müller", "stadt": "Frankfurt", "bundesland": "Hessen", "abteilung": "Marketing", "beruf": "Content Manager", "teilzeit": "Nein", "alter": 41, "umsatz_gesamt": 258831.5999999999, "monatsumsatz": [6291.1, 1599.41, 1529.35, 3699.1, 10787.78, 9553.47, 10328.43, 10787.1, 2520.92, 3443.51, 1418.55, 10765.6, 9548.65, 4388.88, 7447.94, 1854.64, 11158.57, 10375.27, 11714.47, 9729.26, 10576.99, 342.05, 10164.59, 4584.16, 10052.81, 8664.14, 10368.77, 9728.99, 3201.67, 9448.49, 1297.15, 10466.0, 10303.12, 3069.59, 11268.9, 6352.18]}, {"vorname": "Peter", "nachname": "Weber", "stadt": "Genf", "bundesland": "Genf", "abteilung": "Marketing", "beruf": "Marketing Manager", "teilzeit": "Nein", "alter": 58, "umsatz_gesamt": 234303.9, "monatsumsatz": [336.9, 6284.42, 4861.61, 7080.44, 10875.64, 6619.13, 6521.63, 11984.74, 5665.25, 10697.72, 5048.3, 3081.63, 8339.16, 7918.85, 3491.99, 5576.41, 6124.94, 4761.42, 6026.01, 7952.14, 10175.78, 11130.25, 8473.7, 2288.64, 5552.68, 4819.18, 2149.74, 11384.54, 7912.96, 11612.83, 8831.04, 5802.04, 4305.55, 3019.7, 6729.46, 867.48]}, {"vorname": "Claudia", "nachname": "Wagner", "stadt": "Berlin", "bundesland": "Berlin", "abteilung": "Marketing", "beruf": "SEO Spezialist", "teilzeit": "Ja", "alter": 65, "umsatz_gesamt": 99610.56999999998, "monatsumsatz": [2801.51, 3134.8, 3451.41, 2674.67, 2346.81, 4634.05, 3531.54, 3002.79, 2069.8, 169.48, 721.39, 2870.23, 5193.33, 626.77, 5644.06, 850.05, 1871.34, 2732.0, 1241.2, 2897.56, 2856.98, 3023.34, 4807.67, 2200.48, 1621.43, 4375.0, 690.51, 5095.08, 3887.82, 4062.84, 986.12, 5903.4, 1463.48, 1203.73, 1104.94, 3862.96]}, {"vorname": "Marie", "nachname": "Zimmermann", "stadt": "Salzburg", "bundesland": "Salzburg", "abteilung": "Marketing", "beruf": "SEO Spezialist", "teilzeit": "Nein", "alter": 46, "umsatz_gesamt": 216188.59, "monatsumsatz": [4119.27, 8878.92, 369.83, 1875.88, 2638.39, 8961.05, 9561.25, 10193.61, 3539.74, 8749.83, 4113.18, 12000.0, 10425.95, 9365.1, 7775.29, 11488.7, 133.8, 10497.2, 1696.49, 501.28, 6872.62, 5438.33, 7555.85, 1174.75, 2268.57, 8007.45, 8711.25, 2540.84, 10867.54, 10217.51, 1709.46, 2207.91, 7402.62, 3487.84, 1581.79, 9259.5]}, {"vorname": "Eva", "nachname": "Meyer", "stadt": "Dresden", "bundesland": "Sachsen", "abteilung": "Operations", "beruf": "Logistikkoordinator", "teilzeit": "Ja", "alter": 43, "umsatz_gesamt": 117245.31, "monatsumsatz": [5196.47, 1467.9, 2314.29, 5104.03, 4799.39, 3893.08, 4781.46, 678.34, 4177.02, 404.66, 6503.02, 1099.83, 2246.55, 3190.05, 4813.59, 4070.36, 1087.56, 2278.5, 2151.59, 172.9, 4106.78, 5785.9, 6716.77, 901.52, 4970.15, 609.86, 2467.71, 275.83, 1569.68, 1885.43, 4227.41, 4067.57, 4605.17, 3978.88, 3898.58, 6747.48]}, {"vorname": "Felix", "nachname": "Müller", "stadt": "Dresden", "bundesland": "Sachsen", "abteilung": "Operations", "beruf": "Logistikkoordinator", "teilzeit": "Nein", "alter": 54, "umsatz_gesamt": 218159.56, "monatsumsatz": [4545.33, 5900.65, 2073.24, 5652.18, 11848.4, 875.9, 7048.36, 165.52, 2588.92, 12000.0, 12000.0, 5492.06, 3094.07, 7696.39, 9205.32, 5082.9, 4827.33, 7686.45, 6451.86, 1832.17, 1003.16, 1090.5, 12000.0, 12000.0, 1678.07, 3528.9, 7037.25, 9158.69, 7798.07, 7717.85, 3722.03, 5249.83, 11441.14, 3293.2, 3373.82, 12000.0]}, {"vorname": "Simon", "nachname": "Schmidt", "stadt": "München", "bundesland": "Bayern", "abteilung": "Operations", "beruf": "Logistikkoordinator", "teilzeit": "Nein", "alter": 54, "umsatz_gesamt": 219352.82, "monatsumsatz": [2216.22, 8962.03, 6650.49, 7036.6, 9756.64, 2795.98, 9292.42, 9463.73, 7151.78, 3826.39, 12000.0, 12000.0, 5834.33, 8623.95, 1319.12, 10397.37, 1581.64, 4298.91, 9461.18, 7066.24, 189.37, 3662.07, 1749.27, 5809.26, 1227.41, 686.43, 5379.3, 4344.47, 7123.99, 5424.07, 2658.6, 7381.28, 8726.92, 12000.0, 9092.86, 4162.5]}, {"vorname": "Jonas", "nachname": "Werner", "stadt": "Leipzig", "bundesland": "Sachsen", "abteilung": "Operations", "beruf": "Logistikkoordinator", "teilzeit": "Nein", "alter": 64, "umsatz_gesamt": 218855.82, "monatsumsatz": [3455.3, 8920.77, 6858.43, 1432.81, 8079.91, 632.07, 2678.22, 6189.29, 551.14, 5532.76, 12000.0, 11951.24, 8354.1, 3355.54, 1036.63, 5480.95, 4427.03, 3499.14, 9414.09, 8874.91, 2911.01, 5082.18, 12000.0, 12000.0, 8379.57, 7910.6, 6558.71, 9551.68, 1806.8, 11188.77, 286.92, 6498.54, 7631.3, 9569.76, 132.41, 4623.24]}, {"vorname": "Max", "nachname": "Winkler", "stadt": "Genf", "bundesland": "Genf", "abteilung": "Operations", "beruf": "Logistikkoordinator", "teilzeit": "Ja", "alter": 52, "umsatz_gesamt": 111965.14, "monatsumsatz": [1828.16, 3471.1, 4982.3, 4108.1, 5884.92, 2871.19, 1093.67, 809.12, 4296.27, 6510.88, 255.19, 1390.98, 4271.99, 4783.27, 1893.57, 1860.46, 2389.34, 4892.44, 2840.4, 219.72, 3881.4, 1974.17, 5948.76, 329.85, 3540.95, 1475.37, 4796.05, 2621.71, 2400.13, 2638.42, 5738.87, 2034.22, 1120.9, 4775.27, 2534.69, 5501.31]}, {"vorname": "Daniel", "nachname": "Koch", "stadt": "Luzern", "bundesland": "Luzern", "abteilung": "Operations", "beruf": "Operations Manager", "teilzeit": "Ja", "alter": 55, "umsatz_gesamt": 111898.29, "monatsumsatz": [3805.36, 764.92, 665.52, 3157.77, 2189.34, 435.19, 4227.23, 3972.84, 3516.1, 2322.27, 2225.96, 6733.44, 3954.7, 2359.09, 3835.6, 2923.2, 1903.7, 4243.1, 3371.86, 5337.6, 3682.25, 2462.1, 4592.17, 5619.73, 2043.27, 3963.57, 1767.1, 1066.25, 10.79, 4212.05, 3437.01, 5104.54, 4624.98, 3915.63, 1256.36, 2195.7]}, {"vorname": "Felix", "nachname": "Meier", "stadt": "Wien", "bundesland": "Wien", "abteilung": "Operations", "beruf": "Operations Manager", "teilzeit": "Nein", "alter": 25, "umsatz_gesamt": 214491.97, "monatsumsatz": [666.99, 5914.61, 6065.84, 6872.42, 1798.23, 3937.41, 6244.1, 1394.88, 2464.82, 8047.44, 1254.99, 7043.18, 8733.87, 4897.07, 6158.97, 5481.58, 692.84, 5548.54, 9682.98, 8679.36, 4751.38, 11267.05, 10292.1, 7980.7, 489.13, 3720.91, 765.12, 11929.48, 11214.99, 828.23, 11205.31, 380.82, 4906.4, 10611.81, 10568.42, 12000.0]}, {"vorname": "Anna", "nachname": "Becker", "stadt": "Luzern", "bundesland": "Luzern", "abteilung": "Operations", "beruf": "Projektmanager", "teilzeit": "Ja", "alter": 33, "umsatz_gesamt": 101327.69, "monatsumsatz": [4741.25, 5113.53, 513.92, 2915.94, 415.28, 4563.61, 4595.01, 770.35, 2851.69, 3793.64, 1828.89, 6019.79, 2284.94, 1143.71, 3235.78, 4379.59, 1206.91, 1870.3, 5970.9, 3899.27, 2628.6, 3571.27, 834.93, 1550.41, 1825.66, 3176.87, 1380.69, 1321.3, 425.96, 3786.62, 1373.65, 5432.52, 5157.81, 488.92, 1642.23, 4615.95]}, {"vorname": "Felix", "nachname": "Hartmann", "stadt": "Hannover", "bundesland": "Niedersachsen", "abteilung": "Operations", "beruf": "Projektmanager", "teilzeit": "Ja", "alter": 25, "umsatz_gesamt": 114737.18, "monatsumsatz": [139.93, 1004.66, 3106.47, 5481.26, 706.57, 4649.79, 4224.23, 1287.42, 3671.26, 4788.47, 6890.54, 1381.23, 732.93, 399.88, 1035.94, 4280.22, 5983.57, 4863.08, 5805.37, 5919.45, 4007.04, 4895.83, 3794.98, 2003.5, 1619.77, 850.53, 4257.38, 4201.32, 1044.55, 2168.95, 1345.45, 5910.8, 4752.39, 1633.48, 3408.75, 2490.19]}, {"vorname": "Nicole", "nachname": "Hartmann", "stadt": "Berlin", "bundesland": "Berlin", "abteilung": "Operations", "beruf": "Projektmanager", "teilzeit": "Nein", "alter": 49, "umsatz_gesamt": 201275.81, "monatsumsatz": [9268.94, 7396.4, 11669.96, 2735.49, 3605.77, 8924.68, 9288.37, 3850.42, 8745.59, 8348.71, 1232.16, 6095.69, 9865.07, 4397.44, 5813.52, 6198.02, 4486.92, 674.47, 9497.88, 787.4, 8514.83, 5566.71, 10771.13, 7235.15, 6141.66, 1876.36, 10502.17, 2408.72, 691.53, 396.85, 606.71, 4324.5, 2389.32, 5083.26, 6406.21, 5477.8]}, {"vorname": "Sandra", "nachname": "Mayer", "stadt": "Düsseldorf", "bundesland": "Nordrhein-Westfalen", "abteilung": "Operations", "beruf": "Projektmanager", "teilzeit": "Nein", "alter": 56, "umsatz_gesamt": 211272.65, "monatsumsatz": [7572.78, 2983.7, 121.81, 11376.75, 1027.36, 8640.9, 5862.93, 9097.98, 8287.31, 8913.46, 6773.33, 10942.47, 1004.98, 2393.24, 8301.45, 3674.47, 6978.67, 5679.13, 6371.06, 5106.05, 8951.23, 4564.92, 9699.4, 3738.65, 2715.16, 1303.08, 2311.01, 1434.66, 6430.37, 9146.28, 2221.8, 2596.62, 5810.38, 9999.27, 12000.0, 7239.99]}, {"vorname": "Maria", "nachname": "Huber", "stadt": "Wien", "bundesland": "Wien", "abteilung": "Operations", "beruf": "Prozessanalyst", "teilzeit": "Nein", "alter": 28, "umsatz_gesamt": 233793.03, "monatsumsatz": [1081.45, 7094.14, 3198.32, 9795.42, 11007.11, 670.9, 11956.7, 2632.94, 10158.06, 11003.99, 4896.3, 11581.27, 9128.39, 1901.88, 7110.23, 9674.52, 8371.52, 10967.76, 338.48, 8406.73, 11370.7, 7777.77, 7770.9, 2597.62, 10670.47, 9521.56, 5906.72, 3708.64, 5885.24, 1083.09, 2791.48, 2625.71, 6317.38, 9.43, 12000.0, 2780.21]}, {"vorname": "Sophie", "nachname": "Meyer", "stadt": "Winterthur", "bundesland": "Zürich", "abteilung": "Operations", "beruf": "Prozessanalyst", "teilzeit": "Nein", "alter": 38, "umsatz_gesamt": 199078.13, "monatsumsatz": [6769.43, 9584.34, 5855.37, 6492.19, 7409.51, 2817.24, 8212.79, 3448.55, 2729.84, 1247.23, 12000.0, 10493.1, 7602.02, 1085.48, 1996.38, 3593.59, 347.37, 3892.5, 673.43, 4301.56, 5168.24, 3369.92, 5686.31, 9408.85, 1944.61, 1890.75, 7313.9, 4590.53, 8197.61, 5972.01, 6997.89, 2786.26, 7654.86, 6342.07, 9202.4, 12000.0]}, {"vorname": "Sabine", "nachname": "Schäfer", "stadt": "Lausanne", "bundesland": "Waadt", "abteilung": "Operations", "beruf": "Prozessanalyst", "teilzeit": "Nein", "alter": 30, "umsatz_gesamt": 231370.99, "monatsumsatz": [8241.71, 5381.27, 6176.7, 5985.12, 3702.49, 278.12, 11342.79, 6065.33, 11600.24, 2968.99, 4869.95, 697.46, 5344.86, 9529.27, 7851.12, 5647.04, 6440.29, 10166.07, 5171.13, 10589.47, 8730.1, 10541.22, 5049.94, 5528.03, 6159.04, 2102.28, 6638.68, 882.38, 6051.07, 9172.85, 3356.65, 11869.09, 8164.78, 1639.59, 12000.0, 5435.87]}, {"vorname": "Melanie", "nachname": "Werner", "stadt": "Bern", "bundesland": "Bern", "abteilung": "Operations", "beruf": "Prozessanalyst", "teilzeit": "Ja", "alter": 65, "umsatz_gesamt": 114507.14, "monatsumsatz": [1357.24, 3351.03, 4685.55, 5220.71, 4979.9, 5468.92, 4227.77, 3885.79, 4530.65, 3771.64, 4163.37, 5355.41, 5207.17, 1588.56, 1064.56, 4095.95, 1121.86, 1042.77, 3083.08, 2263.19, 2571.05, 3840.53, 897.46, 4029.5, 1377.09, 1785.04, 4258.14, 928.83, 922.22, 1935.78, 305.13, 5594.29, 3693.65, 4567.04, 3384.8, 3951.47]}, {"vorname": "Jan", "nachname": "Schmidt", "stadt": "Leipzig", "bundesland": "Sachsen", "abteilung": "Operations", "beruf": "Supply Chain Manager", "teilzeit": "Nein", "alter": 29, "umsatz_gesamt": 223339.99, "monatsumsatz": [10373.62, 5125.49, 6616.0, 4130.99, 10051.85, 3103.92, 9970.44, 1084.7, 329.41, 685.18, 11782.73, 10761.66, 2314.64, 2390.59, 2701.34, 2480.77, 7819.05, 6159.37, 10375.56, 11605.66, 8186.4, 6542.54, 1825.93, 2390.17, 8649.34, 2416.72, 7300.13, 11316.06, 8552.89, 8512.42, 3304.54, 10745.8, 10219.03, 6334.17, 3011.28, 4169.6]}, {"vorname": "Lea", "nachname": "Schneider", "stadt": "Wien", "bundesland": "Wien", "abteilung": "Operations", "beruf": "Supply Chain Manager", "teilzeit": "Nein", "alter": 29, "umsatz_gesamt": 211396.35, "monatsumsatz": [4937.72, 1299.98, 6218.46, 3787.82, 101.02, 8089.24, 4553.14, 1208.97, 4339.23, 11893.42, 2582.7, 3627.32, 2909.61, 10352.09, 4117.16, 2206.96, 5087.31, 5029.12, 9026.35, 4380.94, 4807.11, 6220.06, 7885.45, 12000.0, 7408.93, 8793.26, 8649.79, 9649.05, 6664.08, 10275.7, 2352.76, 9600.45, 8862.5, 6527.22, 134.44, 5816.99]}, {"vorname": "Lisa", "nachname": "Becker", "stadt": "Bochum", "bundesland": "Nordrhein-Westfalen", "abteilung": "Produkt", "beruf": "Business Analyst", "teilzeit": "Ja", "alter": 28, "umsatz_gesamt": 112961.53, "monatsumsatz": [3495.2, 2218.86, 1462.02, 767.31, 3554.09, 808.34, 3075.86, 5344.79, 881.19, 1147.76, 6364.88, 3564.82, 2189.46, 5233.92, 3825.74, 5271.05, 4367.85, 4927.82, 5683.52, 1299.56, 3639.16, 3252.75, 3323.51, 1513.61, 2218.14, 770.65, 3495.88, 4604.94, 3739.27, 3064.83, 1006.33, 4113.55, 5534.11, 4116.08, 475.02, 2609.66]}, {"vorname": "Felix", "nachname": "Hartmann", "stadt": "Salzburg", "bundesland": "Salzburg", "abteilung": "Produkt", "beruf": "Business Analyst", "teilzeit": "Nein", "alter": 31, "umsatz_gesamt": 202373.1800000001, "monatsumsatz": [2884.21, 1414.94, 3456.35, 10570.16, 5816.54, 346.43, 7560.27, 9591.76, 8517.39, 4288.35, 188.71, 5630.27, 2426.77, 9087.18, 1361.53, 11364.73, 7772.52, 1847.65, 11191.84, 3502.34, 8464.94, 5733.77, 6658.49, 6516.63, 4933.29, 1562.13, 2287.32, 7192.53, 8955.51, 1638.1, 837.72, 9272.1, 10252.95, 4690.28, 10870.5, 3686.98]}, {"vorname": "Michael", "nachname": "Wolf", "stadt": "Zürich", "bundesland": "Zürich", "abteilung": "Produkt", "beruf": "Business Analyst", "teilzeit": "Nein", "alter": 57, "umsatz_gesamt": 240269.23, "monatsumsatz": [1714.46, 4026.8, 3394.72, 4905.23, 4060.41, 7174.63, 9470.72, 7767.66, 790.94, 1304.18, 9361.63, 3921.23, 7816.32, 7090.89, 10876.11, 10479.36, 4000.34, 6992.87, 1697.14, 4197.85, 11612.36, 9639.02, 5409.02, 8211.57, 10130.42, 3343.48, 4520.15, 9499.94, 9758.22, 8041.4, 9947.51, 8865.3, 8224.97, 7264.23, 8915.14, 5843.01]}, {"vorname": "Daniel", "nachname": "Becker", "stadt": "München", "bundesland": "Bayern", "abteilung": "Produkt", "beruf": "Product Manager", "teilzeit": "Ja", "alter": 54, "umsatz_gesamt": 103702.6, "monatsumsatz": [2339.04, 3911.93, 2976.76, 2296.38, 2559.98, 2123.66, 5449.83, 1649.89, 2676.07, 1025.56, 4237.34, 4257.14, 3495.3, 2694.01, 5296.67, 2874.19, 526.33, 2298.09, 2515.41, 3855.92, 4783.19, 1719.12, 6859.2, 3751.23, 105.46, 2065.49, 4280.22, 2878.11, 4688.61, 2064.2, 3393.91, 1929.63, 1622.61, 179.83, 4120.1, 202.19]}, {"vorname": "Simon", "nachname": "Berger", "stadt": "Frankfurt", "bundesland": "Hessen", "abteilung": "Produkt", "beruf": "Product Owner", "teilzeit": "Nein", "alter": 22, "umsatz_gesamt": 197661.9800000001, "monatsumsatz": [2570.36, 10609.7, 2014.65, 10623.84, 1064.71, 8507.59, 7669.23, 10639.84, 5359.56, 3659.93, 3443.66, 935.57, 2771.91, 1166.77, 15.37, 4631.25, 8791.01, 11629.22, 10614.62, 5916.98, 4544.55, 7535.13, 1399.71, 6616.95, 9331.75, 7030.47, 8245.92, 1951.88, 884.51, 10149.15, 3538.9, 3824.6, 11419.95, 1023.97, 2347.45, 5181.32]}, {"vorname": "Hannah", "nachname": "Moser", "stadt": "Düsseldorf", "bundesland": "Nordrhein-Westfalen", "abteilung": "Produkt", "beruf": "UX Designer", "teilzeit": "Nein", "alter": 21, "umsatz_gesamt": 216584.66, "monatsumsatz": [8819.16, 9118.63, 3983.67, 9209.0, 7199.41, 8599.9, 4359.53, 5430.39, 1169.24, 9092.96, 30.32, 4900.92, 6843.54, 8639.06, 6572.29, 4486.68, 1275.87, 10762.53, 5909.07, 9862.06, 8910.13, 5647.11, 3509.19, 2703.72, 1304.05, 9203.7, 2587.07, 9894.65, 2286.95, 4055.2, 9085.79, 558.0, 7598.89, 9275.56, 1700.42, 12000.0]}, {"vorname": "Max", "nachname": "Meyer", "stadt": "Innsbruck", "bundesland": "Tirol", "abteilung": "Recht", "beruf": "Compliance Manager", "teilzeit": "Nein", "alter": 64, "umsatz_gesamt": 230491.4700000001, "monatsumsatz": [9183.6, 402.82, 11057.65, 5014.62, 10051.26, 11207.07, 436.08, 10034.44, 9455.53, 2571.1, 10336.24, 12000.0, 3126.24, 404.63, 3580.71, 7233.4, 11141.46, 4020.51, 5452.19, 7695.75, 6291.82, 12000.0, 1851.96, 6958.13, 2946.64, 8735.19, 3968.21, 8773.43, 7779.42, 8623.18, 169.01, 4045.35, 3540.29, 9306.74, 2665.63, 8431.17]}, {"vorname": "Jana", "nachname": "Neumann", "stadt": "Leipzig", "bundesland": "Sachsen", "abteilung": "Recht", "beruf": "Compliance Manager", "teilzeit": "Nein", "alter": 43, "umsatz_gesamt": 232795.0599999999, "monatsumsatz": [6208.99, 2819.96, 4885.62, 1277.58, 868.63, 3531.02, 11364.19, 9635.31, 11480.51, 12000.0, 11221.43, 7933.54, 7497.27, 10433.4, 6758.02, 9239.61, 9089.68, 11534.86, 5506.18, 5528.65, 7041.92, 377.44, 1604.5, 932.25, 6843.55, 10737.34, 8122.96, 2759.16, 3788.77, 11465.35, 6198.05, 116.68, 9986.12, 3425.96, 1283.53, 9297.03]}, {"vorname": "Andreas", "nachname": "Hoffmann", "stadt": "Bochum", "bundesland": "Nordrhein-Westfalen", "abteilung": "Recht", "beruf": "Datenschutzbeauftragter", "teilzeit": "Ja", "alter": 34, "umsatz_gesamt": 96732.95, "monatsumsatz": [1197.56, 432.21, 226.53, 2305.96, 5906.69, 3683.79, 3126.03, 4269.63, 3584.84, 6525.44, 5659.58, 4418.01, 2370.45, 1089.22, 3941.31, 4823.46, 1716.04, 201.66, 3597.09, 3094.88, 1390.03, 1169.43, 248.82, 1650.87, 1.55, 850.2, 5980.9, 4678.04, 2118.77, 2370.86, 3516.48, 3106.46, 4421.55, 473.46, 622.14, 1963.01]}, {"vorname": "Hannah", "nachname": "Gruber", "stadt": "Zürich", "bundesland": "Zürich", "abteilung": "Recht", "beruf": "Jurist", "teilzeit": "Nein", "alter": 64, "umsatz_gesamt": 206037.01, "monatsumsatz": [2684.63, 3734.09, 8115.55, 4618.52, 10068.4, 6700.13, 11853.5, 654.79, 7720.78, 2165.6, 11714.07, 11755.82, 9389.69, 808.54, 5899.78, 2890.7, 11641.74, 604.21, 2672.48, 7719.81, 4839.32, 3243.0, 6335.51, 11057.41, 4839.46, 9251.16, 5364.82, 1424.48, 5968.48, 7840.48, 1231.72, 4948.06, 6685.57, 2.34, 1254.36, 8338.01]}, {"vorname": "Klaus", "nachname": "Krüger", "stadt": "Lausanne", "bundesland": "Waadt", "abteilung": "Recht", "beruf": "Jurist", "teilzeit": "Nein", "alter": 19, "umsatz_gesamt": 196886.6, "monatsumsatz": [877.21, 10244.31, 9252.27, 3175.87, 2529.7, 6865.65, 7417.3, 363.43, 10667.96, 7528.97, 8858.32, 4168.9, 2644.68, 8719.37, 4873.11, 5442.53, 8263.36, 1896.97, 4987.46, 5573.31, 4082.31, 1982.63, 11888.49, 4406.57, 10670.65, 3730.0, 4784.6, 9127.98, 6179.76, 1274.21, 2900.85, 1470.26, 5395.15, 1944.11, 698.35, 12000.0]}, {"vorname": "Petra", "nachname": "Moser", "stadt": "Köln", "bundesland": "Nordrhein-Westfalen", "abteilung": "Recht", "beruf": "Jurist", "teilzeit": "Ja", "alter": 43, "umsatz_gesamt": 117711.37, "monatsumsatz": [5397.81, 3881.9, 3154.17, 4614.99, 4940.04, 442.5, 5834.28, 3854.03, 2699.85, 4692.75, 2377.15, 6057.93, 4213.42, 3454.89, 1091.78, 5797.59, 2595.71, 5464.27, 332.48, 744.97, 918.09, 1136.13, 2226.36, 4894.39, 1868.52, 5080.88, 5369.56, 5075.6, 1503.63, 3810.34, 3305.05, 751.02, 1816.95, 3681.0, 3467.75, 1163.59]}, {"vorname": "Laura", "nachname": "Wolf", "stadt": "München", "bundesland": "Bayern", "abteilung": "Recht", "beruf": "Jurist", "teilzeit": "Ja", "alter": 46, "umsatz_gesamt": 108253.89, "monatsumsatz": [1693.94, 817.73, 4143.0, 2462.26, 4649.83, 5523.13, 5236.91, 4415.02, 373.69, 952.77, 1430.66, 2242.84, 3576.02, 2837.58, 1882.52, 1039.09, 5472.74, 2053.96, 2125.72, 4631.94, 4325.55, 4438.83, 4783.86, 4209.53, 1038.23, 1331.2, 3348.52, 1349.2, 5837.46, 1785.69, 1734.02, 1243.67, 4229.93, 2187.58, 2406.74, 6442.53]}, {"vorname": "Katharina", "nachname": "Hoffmann", "stadt": "Lausanne", "bundesland": "Waadt", "abteilung": "Recht", "beruf": "Legal Counsel", "teilzeit": "Nein", "alter": 64, "umsatz_gesamt": 206196.01, "monatsumsatz": [9873.08, 723.73, 4657.19, 4768.26, 3913.52, 3314.41, 5497.89, 10481.6, 9438.61, 8598.2, 7211.36, 5790.39, 4475.98, 1600.56, 7055.21, 9100.53, 11275.8, 11099.14, 6752.21, 1211.89, 3433.11, 7391.74, 4745.39, 5670.28, 4136.87, 5244.32, 7307.55, 449.59, 3304.97, 1726.23, 7303.86, 8323.94, 465.39, 12000.0, 4574.62, 3278.59]}, {"vorname": "Max", "nachname": "Mayer", "stadt": "Duisburg", "bundesland": "Nordrhein-Westfalen", "abteilung": "Recht", "beruf": "Vertragsmanager", "teilzeit": "Nein", "alter": 54, "umsatz_gesamt": 238766.97, "monatsumsatz": [6944.31, 10654.55, 3878.5, 11651.68, 3793.67, 5277.15, 5627.05, 7576.62, 9555.96, 8161.59, 4856.8, 1023.83, 4986.82, 406.16, 4424.85, 3444.92, 7736.0, 11728.42, 1083.56, 7128.96, 4613.79, 8008.55, 12000.0, 10197.11, 443.05, 9817.74, 6859.88, 2258.87, 7260.07, 6016.41, 11492.67, 5406.28, 9731.6, 11555.81, 12000.0, 1163.74]}, {"vorname": "Jonas", "nachname": "Meyer", "stadt": "Bremen", "bundesland": "Bremen", "abteilung": "Recht", "beruf": "Vertragsmanager", "teilzeit": "Nein", "alter": 63, "umsatz_gesamt": 171558.62, "monatsumsatz": [334.73, 10178.38, 1979.97, 10677.04, 1885.25, 1215.09, 2466.61, 2279.81, 8366.36, 9964.13, 10073.64, 3660.65, 3040.45, 2565.52, 595.63, 6861.24, 10078.25, 1843.08, 4329.95, 5131.27, 3534.59, 9135.88, 8282.97, 2755.51, 277.95, 1844.99, 3501.74, 983.23, 10125.23, 3700.24, 4769.61, 5869.16, 7932.48, 1257.69, 7508.94, 2551.36]}, {"vorname": "Laura", "nachname": "Moser", "stadt": "München", "bundesland": "Bayern", "abteilung": "Recht", "beruf": "Vertragsmanager", "teilzeit": "Nein", "alter": 60, "umsatz_gesamt": 245838.97, "monatsumsatz": [1320.1, 3818.86, 7984.09, 9003.41, 10417.11, 8652.73, 11620.78, 7204.92, 4219.75, 7975.28, 2935.8, 9062.96, 2421.84, 1168.76, 10144.48, 4410.73, 9151.27, 6889.2, 9686.66, 10141.86, 11694.56, 11294.29, 8467.31, 8869.25, 283.54, 10034.11, 9953.53, 3209.37, 2164.99, 8432.39, 3707.82, 4077.9, 73.27, 12000.0, 7815.23, 5530.82]}, {"vorname": "Jonas", "nachname": "Schulz", "stadt": "Genf", "bundesland": "Genf", "abteilung": "Recht", "beruf": "Vertragsmanager", "teilzeit": "Nein", "alter": 48, "umsatz_gesamt": 221662.54, "monatsumsatz": [8720.97, 2056.43, 1163.17, 5172.61, 5082.94, 5604.3, 8748.91, 8080.37, 11809.98, 1358.17, 5556.17, 4682.38, 9306.06, 2685.49, 2282.51, 5383.36, 5062.58, 3342.54, 2997.68, 11079.19, 5317.57, 11886.62, 7594.49, 698.12, 10792.25, 9029.1, 11627.96, 11116.4, 10184.35, 1995.73, 5827.69, 2564.97, 4812.48, 809.17, 5229.83, 12000.0]}, {"vorname": "Robert", "nachname": "Zimmermann", "stadt": "Lausanne", "bundesland": "Waadt", "abteilung": "Recht", "beruf": "Vertragsmanager", "teilzeit": "Nein", "alter": 49, "umsatz_gesamt": 243699.33, "monatsumsatz": [9344.81, 4822.71, 5812.1, 3989.28, 9154.47, 4526.52, 11194.23, 10435.22, 11769.3, 3295.52, 5285.0, 11812.98, 4436.37, 3436.3, 5675.72, 10961.16, 4574.77, 11860.97, 9508.72, 7824.23, 1825.26, 12000.0, 1742.2, 12000.0, 3585.54, 1083.94, 10140.47, 1196.54, 10925.3, 184.17, 1729.86, 10451.2, 11639.48, 1032.63, 10785.05, 3657.31]}, {"vorname": "Lisa", "nachname": "Koch", "stadt": "Bremen", "bundesland": "Bremen", "abteilung": "Vertrieb", "beruf": "Account Manager", "teilzeit": "Nein", "alter": 31, "umsatz_gesamt": 208302.81, "monatsumsatz": [8220.89, 1820.94, 9173.8, 5874.93, 9162.83, 1056.5, 7373.76, 7601.85, 4840.72, 12000.0, 5289.77, 520.61, 2153.67, 4029.5, 168.93, 3866.56, 9998.74, 2286.92, 8120.98, 7520.24, 2985.88, 9570.64, 4752.03, 1779.25, 4142.35, 6357.64, 2004.24, 9886.13, 3578.43, 3489.93, 8733.98, 7156.44, 4054.02, 12000.0, 12000.0, 4729.71]}, {"vorname": "Marie", "nachname": "Mayer", "stadt": "Berlin", "bundesland": "Berlin", "abteilung": "Vertrieb", "beruf": "Inside Sales", "teilzeit": "Nein", "alter": 18, "umsatz_gesamt": 217966.39, "monatsumsatz": [180.64, 7799.68, 6428.86, 3440.26, 6026.59, 8374.31, 5166.88, 11276.54, 2151.2, 12000.0, 7236.52, 3325.37, 6693.63, 2726.12, 4253.29, 9539.24, 948.23, 11511.57, 5507.97, 2918.49, 8366.84, 4139.65, 11427.26, 1112.51, 10710.09, 7018.86, 380.21, 4863.34, 4526.03, 5712.06, 7640.98, 8434.14, 992.23, 11665.55, 8899.72, 4571.53]}, {"vorname": "Julia", "nachname": "Schmitt", "stadt": "Winterthur", "bundesland": "Zürich", "abteilung": "Vertrieb", "beruf": "Key Account Manager", "teilzeit": "Ja", "alter": 22, "umsatz_gesamt": 110122.32, "monatsumsatz": [4655.39, 3109.1, 3440.4, 4256.99, 2506.16, 691.04, 125.14, 1948.61, 4807.93, 4265.06, 5740.98, 6346.41, 475.9, 4560.22, 1459.9, 3533.23, 3143.78, 2374.6, 1861.65, 2037.08, 1998.41, 1160.12, 3522.33, 786.78, 2753.74, 4891.98, 2096.25, 4364.27, 4913.69, 4890.22, 1417.61, 878.67, 1183.63, 4156.55, 5245.49, 4523.01]}, {"vorname": "Jana", "nachname": "Koch", "stadt": "Duisburg", "bundesland": "Nordrhein-Westfalen", "abteilung": "Vertrieb", "beruf": "Vertriebsmitarbeiter", "teilzeit": "Nein", "alter": 34, "umsatz_gesamt": 255323.38, "monatsumsatz": [2443.42, 2900.47, 739.67, 9026.82, 8009.62, 1028.49, 4125.5, 6497.39, 11648.47, 8138.22, 7639.71, 11603.0, 8838.78, 4521.23, 6426.17, 10402.73, 5697.89, 10579.85, 5715.15, 947.46, 10833.33, 9857.42, 6929.0, 12000.0, 8644.86, 7317.38, 7443.28, 1443.38, 9086.27, 2074.55, 11812.42, 11665.98, 9701.53, 1741.37, 5842.57, 12000.0]}];
+const MONTHS   = ["2023-01", "2023-02", "2023-03", "2023-04", "2023-05", "2023-06", "2023-07", "2023-08", "2023-09", "2023-10", "2023-11", "2023-12", "2024-01", "2024-02", "2024-03", "2024-04", "2024-05", "2024-06", "2024-07", "2024-08", "2024-09", "2024-10", "2024-11", "2024-12", "2025-01", "2025-02", "2025-03", "2025-04", "2025-05", "2025-06", "2025-07", "2025-08", "2025-09", "2025-10", "2025-11", "2025-12"];
+const ABTEILUNGEN = ["Customer Support", "Einkauf", "Finance", "HR", "IT", "Marketing", "Operations", "Produkt", "Recht", "Vertrieb"];
+const DEPT_COLORS = {"Customer Support": "#06B6D4", "Einkauf": "#F97316", "Finance": "#8B5CF6", "HR": "#EC4899", "IT": "#10B981", "Marketing": "#F59E0B", "Operations": "#EF4444", "Produkt": "#84CC16", "Recht": "#6366F1", "Vertrieb": "#3B82F6"};
+const DEFAULT_START = "2025-01";
+const DEFAULT_END   = "2025-12";
+
+// ---- Helpers ----
+function eur(v) {
+  return new Intl.NumberFormat('de-DE', {style:'currency',currency:'EUR',maximumFractionDigits:0}).format(v);
+}
+function num(v) {
+  return new Intl.NumberFormat('de-DE').format(Math.round(v));
+}
+
+// ---- Filter State ----
+let state = {
+  start: DEFAULT_START,
+  end:   DEFAULT_END,
+  abteilungen: [],
+  bundeslaender: [],
+  staedte: [],
+  berufe: [],
+  teilzeit: 'all',
+  alterMin: 0,
+  alterMax: 100,
+  clickDept: null,
+  clickBeruf: null,
+};
+
+// ---- Populate selects ----
+function populateSelect(id, items) {
+  const sel = document.getElementById(id);
+  sel.innerHTML = '';
+  items.forEach(v => {
+    const opt = document.createElement('option');
+    opt.value = v;
+    opt.textContent = v;
+    sel.appendChild(opt);
+  });
+}
+
+function populateTimeSel() {
+  ['f-start','f-end'].forEach(id => {
+    const sel = document.getElementById(id);
+    sel.innerHTML = '';
+    MONTHS.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m;
+      opt.textContent = m;
+      sel.appendChild(opt);
+    });
+  });
+  document.getElementById('f-start').value = DEFAULT_START;
+  document.getElementById('f-end').value   = DEFAULT_END;
+}
+
+populateTimeSel();
+populateSelect('f-abteilung', ["Customer Support", "Einkauf", "Finance", "HR", "IT", "Marketing", "Operations", "Produkt", "Recht", "Vertrieb"]);
+populateSelect('f-bundesland', ["Baden-W\u00fcrttemberg", "Basel-Stadt", "Bayern", "Berlin", "Bern", "Bremen", "Genf", "Hamburg", "Hessen", "K\u00e4rnten", "Luzern", "Niedersachsen", "Nordrhein-Westfalen", "Ober\u00f6sterreich", "Sachsen", "Salzburg", "Steiermark", "Tirol", "Waadt", "Wien", "Z\u00fcrich"]);
+populateSelect('f-stadt', ["Basel", "Berlin", "Bern", "Bochum", "Bremen", "Dortmund", "Dresden", "Duisburg", "D\u00fcsseldorf", "Essen", "Frankfurt", "Genf", "Graz", "Hamburg", "Hannover", "Innsbruck", "Klagenfurt", "K\u00f6ln", "Lausanne", "Leipzig", "Linz", "Luzern", "M\u00fcnchen", "N\u00fcrnberg", "Salzburg", "Stuttgart", "Wien", "Winterthur", "Z\u00fcrich"]);
+populateSelect('f-beruf', ["Account Manager", "Brand Manager", "Business Analyst", "CFO Assistant", "CX Spezialist", "Category Manager", "Cloud Architect", "Compliance Manager", "Content Manager", "Controller", "Data Engineer", "Datenschutzbeauftragter", "DevOps Engineer", "Eink\u00e4ufer", "HR Business Partner", "HR Manager", "Helpdesk Agent", "IT-Administrator", "Inside Sales", "Jurist", "Key Account Manager", "Legal Counsel", "Lieferantenmanager", "Logistikkoordinator", "Marketing Manager", "Operations Manager", "Personalreferent", "Procurement Manager", "Product Manager", "Product Owner", "Projektmanager", "Prozessanalyst", "Recruiter", "SEO Spezialist", "Service Desk Analyst", "Softwareentwickler", "Sourcing Specialist", "Supply Chain Manager", "Support Mitarbeiter", "Talent Manager", "Treasury Manager", "UX Designer", "Vertragsmanager", "Vertriebsmitarbeiter"]);
+
+const ages = ALL_ROWS.map(r => r.alter).filter(a => a > 0);
+const minAge = Math.min(...ages);
+const maxAge = Math.max(...ages);
+document.getElementById('f-alter-min').min = minAge;
+document.getElementById('f-alter-min').max = maxAge;
+document.getElementById('f-alter-min').value = minAge;
+document.getElementById('f-alter-max').min = minAge;
+document.getElementById('f-alter-max').max = maxAge;
+document.getElementById('f-alter-max').value = maxAge;
+state.alterMin = minAge;
+state.alterMax = maxAge;
+document.getElementById('alter-min-lbl').textContent = minAge;
+document.getElementById('alter-max-lbl').textContent = maxAge;
+
+// ---- Filter logic ----
+function getSelectedValues(selectId) {
+  const sel = document.getElementById(selectId);
+  return Array.from(sel.selectedOptions).map(o => o.value);
+}
+
+function getActiveMths() {
+  const si = MONTHS.indexOf(state.start);
+  const ei = MONTHS.indexOf(state.end);
+  if (si < 0 || ei < 0) return MONTHS;
+  return MONTHS.slice(si, ei + 1);
+}
+
+function filterRows() {
+  const activeMths = getActiveMths();
+  return ALL_ROWS.filter(r => {
+    if (state.abteilungen.length && !state.abteilungen.includes(r.abteilung)) return false;
+    if (state.bundeslaender.length && !state.bundeslaender.includes(r.bundesland)) return false;
+    if (state.staedte.length && !state.staedte.includes(r.stadt)) return false;
+    if (state.berufe.length && !state.berufe.includes(r.beruf)) return false;
+    if (state.teilzeit !== 'all' && r.teilzeit !== state.teilzeit) return false;
+    if (r.alter < state.alterMin || r.alter > state.alterMax) return false;
+    if (state.clickDept && r.abteilung !== state.clickDept) return false;
+    if (state.clickBeruf && r.beruf !== state.clickBeruf) return false;
+    return true;
+  }).map(r => {
+    // Slice monatsumsatz to active months
+    const mIdxs = activeMths.map(m => MONTHS.indexOf(m));
+    const sliced = mIdxs.map(i => (i >= 0 && i < r.monatsumsatz.length) ? r.monatsumsatz[i] : 0);
+    return { ...r, umsatz_period: sliced.reduce((a,b) => a+b, 0), monatsumsatz_sliced: sliced };
+  });
+}
+
+// ---- Chart instances ----
+let charts = {};
+
+function destroyChart(id) {
+  if (charts[id]) { charts[id].destroy(); delete charts[id]; }
+}
+
+// ---- Update ----
+function update() {
+  const rows = filterRows();
+  const activeMths = getActiveMths();
+  updateKPIs(rows, activeMths);
+  updateTimeline(rows, activeMths);
+  updateDeptChart(rows);
+  updateBerufeChart(rows);
+  updateDistChart(rows);
+  updateHeatmap(rows, activeMths);
+  updateSummary(rows, activeMths);
+}
+
+// ---- KPIs ----
+function updateKPIs(rows, activeMths) {
+  if (!rows.length) {
+    ['kpi-total','kpi-avg-monthly','kpi-top-dept','kpi-avg-age','kpi-tz','kpi-headcount'].forEach(id => {
+      document.getElementById(id).textContent = '–';
+    });
+    return;
+  }
+  const totalUmsatz = rows.reduce((s,r) => s + r.umsatz_period, 0);
+  document.getElementById('kpi-total').textContent = eur(totalUmsatz);
+  document.getElementById('kpi-total-sub').textContent = `${activeMths.length} Monate`;
+
+  const avgMonthly = rows.length ? (totalUmsatz / rows.length / activeMths.length) : 0;
+  document.getElementById('kpi-avg-monthly').textContent = eur(avgMonthly);
+  document.getElementById('kpi-avg-monthly-sub').textContent = `${rows.length} Personen`;
+
+  // Top dept
+  const deptTotals = {};
+  rows.forEach(r => { deptTotals[r.abteilung] = (deptTotals[r.abteilung] || 0) + r.umsatz_period; });
+  const topDept = Object.entries(deptTotals).sort((a,b) => b[1]-a[1])[0];
+  if (topDept) {
+    document.getElementById('kpi-top-dept').textContent = topDept[0];
+    const pct = (topDept[1] / totalUmsatz * 100).toFixed(1);
+    document.getElementById('kpi-top-dept-sub').textContent = `${eur(topDept[1])} (${pct}%)`;
+  }
+
+  // Avg age
+  const ages = rows.map(r => r.alter).filter(a => a > 0);
+  const avgAge = ages.length ? (ages.reduce((a,b)=>a+b,0)/ages.length) : 0;
+  const sorted = [...ages].sort((a,b)=>a-b);
+  const median = sorted.length ? (sorted.length % 2 === 0 ? (sorted[sorted.length/2-1]+sorted[sorted.length/2])/2 : sorted[Math.floor(sorted.length/2)]) : 0;
+  document.getElementById('kpi-avg-age').textContent = avgAge.toFixed(1);
+  document.getElementById('kpi-avg-age-sub').textContent = `Median: ${median.toFixed(1)}`;
+
+  // Teilzeit
+  const tzCount = rows.filter(r => r.teilzeit === 'Ja').length;
+  const tzPct = rows.length ? (tzCount / rows.length * 100).toFixed(1) : 0;
+  document.getElementById('kpi-tz').textContent = `${tzPct}%`;
+  const tzUmsatz = rows.filter(r=>r.teilzeit==='Ja').reduce((s,r)=>s+r.umsatz_period,0);
+  const fzUmsatz = rows.filter(r=>r.teilzeit==='Nein').reduce((s,r)=>s+r.umsatz_period,0);
+  document.getElementById('kpi-tz-sub').textContent = `TZ: ${eur(tzUmsatz/Math.max(rows.filter(r=>r.teilzeit==='Ja').length,1))} | VZ: ${eur(fzUmsatz/Math.max(rows.filter(r=>r.teilzeit==='Nein').length,1))} Ø`;
+
+  // Headcount
+  document.getElementById('kpi-headcount').textContent = rows.length;
+  document.getElementById('kpi-headcount-sub').textContent = `von ${ALL_ROWS.length} gesamt`;
+}
+
+// ---- Timeline chart ----
+function updateTimeline(rows, activeMths) {
+  destroyChart('timeline');
+  const wrap = document.querySelector('#chart-timeline').parentElement;
+  if (!rows.length) { wrap.innerHTML = '<div class="no-data">Keine Daten f&uuml;r den gew&auml;hlten Filter</div>'; return; }
+  if (!wrap.querySelector('canvas')) { wrap.innerHTML = '<canvas id="chart-timeline"></canvas>'; }
+
+  const mData = activeMths.map((m, mi) => {
+    const idx = MONTHS.indexOf(m);
+    return rows.reduce((s, r) => s + (idx >= 0 && idx < r.monatsumsatz.length ? r.monatsumsatz[idx] : 0), 0);
+  });
+
+  // Per-dept breakdown stacked
+  const depts = [...new Set(rows.map(r=>r.abteilung))].sort();
+  const datasets = depts.map(dept => {
+    const color = DEPT_COLORS[dept] || '#9CA3AF';
+    const data = activeMths.map((m,mi) => {
+      const idx = MONTHS.indexOf(m);
+      return rows.filter(r=>r.abteilung===dept).reduce((s,r) => s+(idx>=0&&idx<r.monatsumsatz.length?r.monatsumsatz[idx]:0),0);
+    });
+    return { label: dept, data, backgroundColor: color+'88', borderColor: color, borderWidth: 1.5, fill: true, tension: 0.3, pointRadius: 0, pointHoverRadius: 4 };
+  });
+
+  charts['timeline'] = new Chart(document.getElementById('chart-timeline'), {
+    type: 'line',
+    data: { labels: activeMths, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        x: { ticks: { color: '#94a3b8', maxTicksLimit: 12 }, grid: { color: '#1e293b' } },
+        y: { ticks: { color: '#94a3b8', callback: v => eur(v) }, grid: { color: '#334155' }, stacked: true }
+      },
+      plugins: {
+        legend: { labels: { color: '#e2e8f0', boxWidth: 12 } },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${eur(ctx.raw)}` } }
+      }
+    }
+  });
+}
+
+// ---- Dept bar chart ----
+function updateDeptChart(rows) {
+  destroyChart('dept');
+  const wrap = document.querySelector('#chart-dept').parentElement;
+  if (!rows.length) { wrap.innerHTML = '<div class="no-data">Keine Daten</div>'; return; }
+  if (!wrap.querySelector('canvas')) { wrap.innerHTML = '<canvas id="chart-dept"></canvas>'; }
+
+  const totals = {};
+  const counts = {};
+  rows.forEach(r => { totals[r.abteilung] = (totals[r.abteilung]||0)+r.umsatz_period; counts[r.abteilung]=(counts[r.abteilung]||0)+1; });
+  const sorted = Object.entries(totals).sort((a,b)=>b[1]-a[1]);
+
+  charts['dept'] = new Chart(document.getElementById('chart-dept'), {
+    type: 'bar',
+    data: {
+      labels: sorted.map(e=>e[0]),
+      datasets: [{ data: sorted.map(e=>e[1]), backgroundColor: sorted.map(e=>DEPT_COLORS[e[0]]||'#9CA3AF'), borderRadius: 4, borderSkipped: false }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+      onClick: (e, el) => {
+        if (!el.length) { state.clickDept = null; } else {
+          const d = sorted[el[0].index][0];
+          state.clickDept = (state.clickDept === d) ? null : d;
+        }
+        update();
+      },
+      scales: {
+        x: { ticks: { color:'#94a3b8', callback: v=>eur(v) }, grid: { color:'#334155' } },
+        y: { ticks: { color:'#e2e8f0' }, grid: { display:false } }
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => ` ${eur(ctx.raw)} (${counts[ctx.label]} Personen)` } }
+      }
+    }
+  });
+}
+
+// ---- Top Berufe ----
+function updateBerufeChart(rows) {
+  destroyChart('berufe');
+  const wrap = document.querySelector('#chart-berufe').parentElement;
+  if (!rows.length) { wrap.innerHTML = '<div class="no-data">Keine Daten</div>'; return; }
+  if (!wrap.querySelector('canvas')) { wrap.innerHTML = '<canvas id="chart-berufe"></canvas>'; }
+
+  const totals = {}; const counts = {};
+  rows.forEach(r => { totals[r.beruf]=(totals[r.beruf]||0)+r.umsatz_period; counts[r.beruf]=(counts[r.beruf]||0)+1; });
+  const sorted = Object.entries(totals).sort((a,b)=>b[1]-a[1]).slice(0,10);
+
+  charts['berufe'] = new Chart(document.getElementById('chart-berufe'), {
+    type: 'bar',
+    data: {
+      labels: sorted.map(e=>e[0]),
+      datasets: [{ data: sorted.map(e=>e[1]), backgroundColor: '#3b82f688', borderColor: '#3b82f6', borderWidth: 1, borderRadius: 4, borderSkipped: false }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+      onClick: (e, el) => {
+        if (!el.length) { state.clickBeruf = null; } else {
+          const b = sorted[el[0].index][0];
+          state.clickBeruf = (state.clickBeruf === b) ? null : b;
+        }
+        update();
+      },
+      scales: {
+        x: { ticks: { color:'#94a3b8', callback: v=>eur(v) }, grid: { color:'#334155' } },
+        y: { ticks: { color:'#e2e8f0', font:{size:11} }, grid: { display:false } }
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => ` ${eur(ctx.raw)} | HC: ${counts[ctx.label]} | Ø: ${eur(ctx.raw/counts[ctx.label])}` } }
+      }
+    }
+  });
+}
+
+// ---- Distribution histogram ----
+function updateDistChart(rows) {
+  destroyChart('dist');
+  const wrap = document.querySelector('#chart-dist').parentElement;
+  if (!rows.length) { wrap.innerHTML = '<div class="no-data">Keine Daten</div>'; return; }
+  if (!wrap.querySelector('canvas')) { wrap.innerHTML = '<canvas id="chart-dist"></canvas>'; }
+
+  const values = rows.map(r=>r.umsatz_period);
+  const max = Math.max(...values);
+  const bins = 15;
+  const step = max / bins || 1;
+  const counts = Array(bins).fill(0);
+  values.forEach(v => { const b = Math.min(Math.floor(v/step), bins-1); counts[b]++; });
+  const labels = counts.map((_,i) => eur(i*step) + ' – ' + eur((i+1)*step));
+
+  charts['dist'] = new Chart(document.getElementById('chart-dist'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{ data: counts, backgroundColor: '#8b5cf688', borderColor: '#8b5cf6', borderWidth: 1, borderRadius: 3 }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      scales: {
+        x: { ticks: { color:'#94a3b8', maxTicksLimit:6, maxRotation:30 }, grid: { display:false } },
+        y: { ticks: { color:'#94a3b8' }, grid: { color:'#334155' } }
+      },
+      plugins: { legend: { display:false }, tooltip: { callbacks: { title: ctx => ctx[0].label, label: ctx => ` ${ctx.raw} Personen` } } }
+    }
+  });
+}
+
+// ---- Heatmap (table-based) ----
+function updateHeatmap(rows, activeMths) {
+  const wrap = document.getElementById('chart-heatmap-wrap');
+  if (!rows.length) { wrap.innerHTML = '<div class="no-data">Keine Daten</div>'; return; }
+
+  const depts = [...new Set(rows.map(r=>r.abteilung))].sort();
+  // Build dept x month matrix
+  const matrix = {};
+  depts.forEach(d => { matrix[d] = {}; activeMths.forEach(m => { matrix[d][m] = 0; }); });
+  rows.forEach(r => {
+    activeMths.forEach((m,mi) => {
+      const idx = MONTHS.indexOf(m);
+      matrix[r.abteilung][m] = (matrix[r.abteilung][m]||0) + (idx>=0&&idx<r.monatsumsatz.length?r.monatsumsatz[idx]:0);
+    });
+  });
+
+  const allVals = depts.flatMap(d => activeMths.map(m => matrix[d][m]));
+  const maxVal = Math.max(...allVals) || 1;
+
+  let html = '<table style="border-collapse:collapse;font-size:10px;width:100%">';
+  html += '<tr><th style="padding:3px 6px;text-align:left;color:#94a3b8;position:sticky;left:0;background:#1e293b">Abteilung</th>';
+  // Show at most every 2nd or 3rd month label to avoid crowding
+  const step = Math.ceil(activeMths.length / 12);
+  activeMths.forEach((m,i) => {
+    html += `<th style="padding:3px 4px;color:#94a3b8;font-weight:400;min-width:28px;text-align:center">${i % step === 0 ? m.slice(5) : ''}</th>`;
+  });
+  html += '</tr>';
+
+  depts.forEach(d => {
+    const color = DEPT_COLORS[d] || '#9CA3AF';
+    html += `<tr><td style="padding:3px 6px;color:#e2e8f0;white-space:nowrap;position:sticky;left:0;background:#1e293b">${d}</td>`;
+    activeMths.forEach(m => {
+      const v = matrix[d][m];
+      const intensity = Math.round((v / maxVal) * 180);
+      const bg = color + intensity.toString(16).padStart(2,'0');
+      html += `<td title="${d} / ${m}: ${eur(v)}" style="background:${bg};width:24px;height:20px;"></td>`;
+    });
+    html += '</tr>';
+  });
+  html += '</table>';
+  wrap.innerHTML = html;
+}
+
+// ---- Summary ----
+function updateSummary(rows, activeMths) {
+  const bar = document.getElementById('summary-bar');
+  const filters = [];
+  if (state.abteilungen.length) filters.push(`Abteilung: <strong>${state.abteilungen.join(', ')}</strong>`);
+  if (state.bundeslaender.length) filters.push(`Bundesland: <strong>${state.bundeslaender.join(', ')}</strong>`);
+  if (state.staedte.length) filters.push(`Stadt: <strong>${state.staedte.join(', ')}</strong>`);
+  if (state.berufe.length) filters.push(`Beruf: <strong>${state.berufe.join(', ')}</strong>`);
+  if (state.teilzeit !== 'all') filters.push(`<strong>${state.teilzeit==='Ja'?'Nur Teilzeit':'Nur Vollzeit'}</strong>`);
+  if (state.clickDept) filters.push(`Chart-Filter Abteilung: <strong>${state.clickDept}</strong>`);
+  if (state.clickBeruf) filters.push(`Chart-Filter Beruf: <strong>${state.clickBeruf}</strong>`);
+  const filterStr = filters.length ? filters.join(' &middot; ') : '<strong>Alle Abteilungen</strong>';
+  bar.innerHTML = `Zeige <strong>${rows.length}</strong> von <strong>${ALL_ROWS.length}</strong> Personen &mdash; Zeitraum <strong>${state.start}</strong> bis <strong>${state.end}</strong> &mdash; ${filterStr}.`;
+}
+
+// ---- Event wiring ----
+document.getElementById('f-start').addEventListener('change', e => { state.start = e.target.value; update(); });
+document.getElementById('f-end').addEventListener('change', e => { state.end = e.target.value; update(); });
+
+document.getElementById('btn-last12').addEventListener('click', () => {
+  state.start = MONTHS.length >= 12 ? MONTHS[MONTHS.length-12] : MONTHS[0];
+  state.end   = MONTHS[MONTHS.length-1];
+  document.getElementById('f-start').value = state.start;
+  document.getElementById('f-end').value   = state.end;
+  update();
+});
+
+['f-abteilung','f-bundesland','f-stadt','f-beruf'].forEach(id => {
+  const key = {
+    'f-abteilung':'abteilungen','f-bundesland':'bundeslaender','f-stadt':'staedte','f-beruf':'berufe'
+  }[id];
+  document.getElementById(id).addEventListener('change', e => {
+    state[key] = Array.from(e.target.selectedOptions).map(o=>o.value);
+    update();
+  });
+});
+
+document.getElementById('f-teilzeit').addEventListener('change', e => { state.teilzeit = e.target.value; update(); });
+
+document.getElementById('f-alter-min').addEventListener('input', e => {
+  state.alterMin = +e.target.value;
+  if (state.alterMin > state.alterMax) { state.alterMax = state.alterMin; document.getElementById('f-alter-max').value = state.alterMax; }
+  document.getElementById('alter-min-lbl').textContent = state.alterMin;
+  update();
+});
+document.getElementById('f-alter-max').addEventListener('input', e => {
+  state.alterMax = +e.target.value;
+  if (state.alterMax < state.alterMin) { state.alterMin = state.alterMax; document.getElementById('f-alter-min').value = state.alterMin; }
+  document.getElementById('alter-max-lbl').textContent = state.alterMax;
+  update();
+});
+
+document.getElementById('btn-reset').addEventListener('click', () => {
+  state = {
+    start: DEFAULT_START, end: DEFAULT_END,
+    abteilungen: [], bundeslaender: [], staedte: [], berufe: [],
+    teilzeit: 'all', alterMin: minAge, alterMax: maxAge,
+    clickDept: null, clickBeruf: null,
+  };
+  populateTimeSel();
+  ['f-abteilung','f-bundesland','f-stadt','f-beruf'].forEach(id => {
+    Array.from(document.getElementById(id).options).forEach(o => o.selected = false);
+  });
+  document.getElementById('f-teilzeit').value = 'all';
+  document.getElementById('f-alter-min').value = minAge;
+  document.getElementById('f-alter-max').value = maxAge;
+  document.getElementById('alter-min-lbl').textContent = minAge;
+  document.getElementById('alter-max-lbl').textContent = maxAge;
+  update();
+});
+
+// Initial render
+update();
+</script>
+</body>
+</html>
