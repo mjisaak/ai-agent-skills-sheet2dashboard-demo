@@ -186,3 +186,13 @@ Sobald der Skill installiert ist, kannst du ihn mit der bereitgestellten Excel-D
 Nimm die Datei test-data.xlsx und erstelle daraus eine bereinigte Excel-Datei sowie ein interaktives HTML-Dashboard
    mit KPIs, Charts und Filtern.
 ```
+
+### Beispielhafte Ausgabe
+
+Nach der Ausführung solltest du folgende Dateien in deinem Output-Verzeichnis finden:
+
+- `sanitized-data.xlsx`: Die bereinigte und standardisierte Excel-Datei
+- `dashboard.html`: Der interaktive Report mit KPIs, Diagrammen und Filtermöglichkeiten
+
+Hier ein Screenshot des Dashboards (Beispiel):
+![Dashboard Screenshot](dashboard-screenshot.png)
